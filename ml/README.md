@@ -1,10 +1,20 @@
-# Módulo de Machine Learning — Bancoagrícola EntropyHack
+# Módulo de Inferencia y Monitoreo de ML — Bancoagrícola EntropyHack
 
-Este módulo contiene el pipeline para detección temprana y preventiva de morosidad crediticia (15 a 45 días antes del vencimiento) y la generación de recomendaciones empáticas.
+Este módulo aloja el microservicio de inferencia de pre-mora crediticia en producción y la base para el monitoreo de data drift y métricas del modelo.
 
 ---
 
-## 1. Instalación de Dependencias
+## 1. Arquitectura de Inferencia
+
+* **Entrenamiento**: Se realiza externamente por el equipo de datos con el dataset oficial.
+* **Artefactos del Modelo**:
+  * `ml/model.joblib` (o `model.json`): Modelo pre-entrenado exportado.
+  * `ml/model_meta.json`: Metadatos de variables esperadas y métricas baseline.
+* **Microservicio**: FastAPI (`api.py`) con latencia ultrarrápida (< 2 ms) para consultas en tiempo real desde Next.js / Supabase.
+
+---
+
+## 2. Iniciar el Servicio Localmente
 
 ```bash
 # Crear entorno virtual en Python
@@ -17,41 +27,19 @@ source venv/bin/activate
 
 # Instalar requerimientos
 pip install -r requirements.txt
-```
 
----
-
-## 2. Generación de Datos Sintéticos
-
-Si no se cuenta con el dataset final aún, genera 100,000 registros sintéticos realistas con:
-
-```bash
-python synthetic_data.py --rows 100000 --output synthetic_credit_data.csv
-```
-
----
-
-## 3. Entrenamiento del Modelo
-
-El script entrena con **LightGBM** o **XGBoost** (y cuenta con fallback nativo en Scikit-Learn `HistGradientBoostingClassifier`).
-
-```bash
-# Entrenar con dataset generado o sintético automático
-python train.py --rows 100000
-```
-
-Salida generada:
-* `model.joblib`: Artefacto binario del modelo optimizado (< 4 MB).
-* `model_meta.json`: Métricas de evaluación (ROC-AUC, Brier score) y metadatos de explicabilidad.
-
----
-
-## 4. Iniciar Microservicio de Inferencia (FastAPI)
-
-```bash
+# Iniciar servidor FastAPI
 uvicorn api:app --reload --port 8000
 ```
 
-* **Documentación interactiva (Swagger UI)**: `http://localhost:8000/docs`
+* **Swagger UI interactivo**: `http://localhost:8000/docs`
 * **Health Check**: `GET http://localhost:8000/health`
-* **Inferencia**: `POST http://localhost:8000/predict`
+* **Predicción de Riesgo**: `POST http://localhost:8000/predict`
+
+---
+
+## 3. Próximos Pasos (Monitoreo & Data Drift)
+
+* Registro de distribuciones de variables de inferencia en tiempo real vs distribución de entrenamiento.
+* Cálculo de métricas de desviación (Population Stability Index - PSI / Wasserstein distance).
+* Detección de drift para alertar necesidad de re-entrenamiento del modelo.

@@ -31,10 +31,8 @@ agricola-entropyhack/
 │   ├── page.tsx                # Dashboard de salud crediticia preventiva
 │   └── globals.css             # Estilos globales y tokens CSS
 ├── ml/                         # Módulo de Machine Learning (Python)
-│   ├── requirements.txt        # Dependencias de ML (LightGBM, XGBoost, SHAP, etc.)
-│   ├── synthetic_data.py       # Generador de datos sintéticos de pre-mora
-│   ├── train.py                # Pipeline de entrenamiento y exportación
-│   └── api.py                  # Microservicio FastAPI ultrarrápido (Inferencia + SHAP)
+│   ├── requirements.txt        # Dependencias de inferencia y ML (FastAPI, Scikit-Learn, etc.)
+│   └── api.py                  # Microservicio FastAPI ultrarrápido (Inferencia + SHAP + Drift)
 ├── supabase/                   # Configuración y esquemas de base de datos
 │   ├── migrations/             # Migraciones SQL versionadas
 │   └── seed.sql                # Datos de prueba para el hackathon

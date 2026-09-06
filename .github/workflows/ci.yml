@@ -59,4 +59,4 @@ jobs:
           # Chequeo estricto de errores de sintaxis o variables no definidas
           flake8 ml --count --select=E9,F63,F7,F82 --show-source --statistics
           # Compilación estática de scripts
-          python -m py_compile ml/synthetic_data.py ml/train.py ml/api.py
+          python -m py_compile ml/api.py
