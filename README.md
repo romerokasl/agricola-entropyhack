@@ -1,2 +1,3 @@
-# agricola-entropyhack
-Codebase for the Bancoagrícola challenge at the Entropy Hackathon at Key Institute, 2026.
+# Bancoagrícola Challenge
+
+> ¿Cómo evitar que un usuario caiga en mora antes de que suceda?
