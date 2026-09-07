@@ -70,6 +70,9 @@ agricola-entropyhack/
 6. **Seguridad y Secretos**:
    * **NUNCA** incluyas claves privadas en código cliente o commits.
    * `SUPABASE_SERVICE_ROLE_KEY` solo puede leerse en Route Handlers del servidor (`/app/api/...`), jamás en Client Components (`'use client'`).
+7. **Modo de Emergencia Offline (`lib/demo.ts`)**:
+   * Es estrictamente un **"botón rojo" de respaldo** por si el Wi-Fi del venue (FEPADE) colapsa durante el pitch del hackathon.
+   * **PROHIBIDO** desviar el desarrollo hacia mocks permanentes o asumir que la app corre offline por defecto. El desarrollo principal siempre debe comunicarse con los endpoints y Supabase.
 
 ---
 
