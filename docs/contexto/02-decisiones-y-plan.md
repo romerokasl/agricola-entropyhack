@@ -95,35 +95,30 @@ registrar**, con el caso de Karla. Todo lo demás es extra.
 
 ## PARTE 2 — Respuestas a los 7 puntos del doc interno del equipo
 
-### 1. Manejo de búsqueda de datos / GRAPH-RAG
+### 1. Manejo de búsqueda de datos: Consultas Estructuradas y Function Calling Tipado
 
-**Recomendación honesta: NO hagan Graph-RAG hoy.**
+**Decisión definitiva: Consultas SQL directas a Postgres/Supabase mediante Function Calling / Tools tipadas.**
 
-Graph-RAG resuelve preguntas complejas sobre corpus grandes y no estructurados. Lo que
-el agente necesita es:
+Queda descartado cualquier uso de RAG o Graph-RAG. Los datos financieros del cliente y las reglas de negocio del banco son **100 % estructurados con esquema cerrado**. Recuperarlos mediante similitud semántica o grafos vectoriales introduce aproximaciones probabilísticas, latencia innecesaria y riesgo de alucinación en saldos o fechas, lo cual es inaceptable bajo la regulación de la SSF.
 
-| Necesidad | Solución correcta | Costo |
+La solución oficial es determinista y auditable:
+
+| Necesidad | Solución técnica exacta | Implementación |
 |---|---|---|
-| Datos del cliente (saldo, cuota, fechas) | **Una query a Postgres** | minutos |
-| Reglas de negocio (plazos, opciones) | **Un objeto tipado en código** | minutos |
-| Contexto de la conversación | Historial en memoria + resumen | minutos |
-| Preferencias del usuario | Columna en la tabla del cliente | minutos |
+| **Datos del cliente** (saldo, cuota, fecha de corte, días de atraso) | **Query SQL directa a Postgres** mediante Tool tipada `consultarCliente(clienteId)` | Supabase / SQL directo |
+| **Reglas de negocio** (escalera de opciones, límites de plazo y monto) | **Objeto tipado inmutable en código** mediante Tool `consultarOpcionesValidas()` | Configuración tipada TypeScript/Python |
+| **Cierre de gestión** (monto acordado, fecha de pago, tipo de alivio) | **Mutación SQL atómica** mediante Tool `registrarAcuerdo(acuerdoData)` | Inserción en tabla `acuerdos` de Supabase |
+| **Contexto de la conversación** | Historial de turnos en memoria + resumen tras 10 turnos | Array de mensajes + compresión contextual |
+| **Preferencias del usuario** (canal preferido, horario de contacto) | Columna en la tabla `clientes` | Lectura directa en la consulta inicial |
 
-Todo eso son **datos estructurados con esquema conocido**. Meterlos en un grafo y
-recuperarlos por similitud semántica es cambiar una respuesta exacta por una
-aproximada. En un banco, eso es un downgrade.
+**Por qué esta arquitectura es superior para un banco:**
+- **Exactitud al 100 %**: No hay aproximación ni ambigüedad; los saldos y fechas provienen directamente de la base de datos relacional.
+- **Latencia mínima**: Una consulta indexada en Postgres toma < 5 ms, mientras que una búsqueda vectorial o en grafo añade 200–800 ms.
+- **Seguridad y Control (Menor Privilegio)**: El agente LLM no tiene acceso libre a la base de datos ni infiere qué proponer. Solo puede invocar herramientas tipadas con parámetros validados por esquema (Zod / Pydantic).
+- **Auditoría total**: Cada llamada a una herramienta genera un evento trazable en el log de la conversación (`tool_call`, `arguments`, `response`).
 
-**Dónde sí serviría RAG:** si tuvieran un corpus de políticas de cobranza en PDF y el
-agente necesitara citarlas. No es el caso hoy.
-
-**Qué decir si el jurado pregunta:** *"Evaluamos RAG y lo descartamos a propósito: para
-datos estructurados con esquema conocido, una query exacta es más rápida, más barata y
-auditable. RAG lo reservamos para el corpus de políticas, que es la fase 2."* — Eso es
-una respuesta más madura que haberlo implementado.
-
-**Function calling / tools sí.** El agente debe tener herramientas tipadas:
-`consultarCliente()`, `consultarOpcionesValidas()`, `registrarAcuerdo()`. Eso es lo que
-le da poder sin darle libertad.
+**Defensa ante el jurado:**
+> *"Descartamos búsquedas semánticas o vectoriales porque en un banco los datos transaccionales son deterministas. Usamos Function Calling con validación estricta de esquemas: el LLM razona la conversación, pero los datos y las reglas provienen de fuentes estructuradas verificadas."*
 
 ---
 
