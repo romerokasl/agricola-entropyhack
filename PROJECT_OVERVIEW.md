@@ -1,121 +1,107 @@
-# Inventario Completo del Repositorio — Bancoagrícola EntropyHack
+# Inventario Completo del Repositorio — Anticipa Bancoagrícola (EntropyHack 2026)
 
-Este documento resume todos los componentes, herramientas, automatizaciones y estándares configurados en el repositorio para el equipo de 4 personas.
-
----
-
-## 📋 1. Gobernanza y Directrices (`AGENTS.md`)
-Ubicación: `AGENTS.md`
-
-* **Propósito**: Punto de referencia único y normativo tanto para los 4 integrantes del equipo como para cualquier asistente de IA (Antigravity, Cursor, Claude Code, Copilot).
-* **Regla Primaria de UI**: Se estableció formalmente **`shadcn/ui` como la fuente primaria oficial** para todos los componentes de interfaz de usuario.
-* **Reglas Anti-Alucinación**: Prohibición estricta de instalar paquetes innecesarios (como Axios, usando `fetch` nativo) o librerías fuera de `package.json` y `ml/requirements.txt`.
-* **Tipado Estricto**: Prohibición de uso de `any` en TypeScript; tipado explícito para requests, responses y modelos de datos.
-* **Conventional Commits**: Estandarización obligatoria de commits (`feat:`, `fix:`, `ml:`, `db:`, `ui:`, `security:`, `chore:`).
-* **Estrategia de Branches**: Prefijos definidos para el trabajo en equipo (`feat/...`, `ml/...`, `db/...`, `fix/...`).
-* **Seguridad Bancaria**: Aislamiento total de claves administrativas (`SUPABASE_SERVICE_ROLE_KEY` exclusiva en Server Components / Route Handlers, jamás en el cliente).
-* **Contrato de Inferencia**: Especificación estricta de payloads para `/api/predict`.
+Este documento resume todos los componentes, herramientas, automatizaciones, esquema de datos y estándares técnicos configurados en el repositorio.
 
 ---
 
-## 🤖 2. Habilidades Especializadas para Agentes de IA (`.agents/skills/`)
+## 📋 1. Misión y Diferenciadores Oficiales
 
-Directrices que los asistentes de IA cargan bajo demanda para mantener consistencia:
-
-1. **`shadcn`**:
-   * Instalada mediante `npx skills add shadcn/ui`.
-   * Provee reglas de composición, instalación de componentes vía CLI, configuración de `components.json` y registries.
-2. **`migrate-radix-to-base`**:
-   * Reglas de migración y adaptación de primitivas de Radix UI a Base UI.
-3. **`motion`** (`.agents/skills/motion/SKILL.md`):
-   * Guía completa de animación con la nueva biblioteca oficial **Motion** (`motion/react` de [motion.dev](https://motion.dev)).
-   * Transiciones aceleradas por GPU (`transform`, `opacity`), resortes físicos (`spring`), `AnimatePresence` y animaciones de layout compartidas (`layoutId`).
-4. **`backend`** (`.agents/skills/backend/SKILL.md`):
-   * Estándares para Route Handlers en Next.js App Router, respuestas JSON unificadas (`success`, `data`, `error`), validación en frontera con Zod y clientes de Supabase.
-5. **`security`** (`.agents/skills/security/SKILL.md`):
-   * Protocolos de seguridad fintech, enmascaramiento de PII bancaria (números de cuenta, tarjetas, DUI salvadoreño), sanitización de logs y Row-Level Security (RLS).
-6. **`health-checks`** (`.agents/skills/health-checks/SKILL.md`):
-   * Estándar de monitoreo de dependencias, cálculo de latencias y especificación de endpoints de salud.
-7. **`bancoagricola-ui`** (`.agents/skills/bancoagricola-ui/SKILL.md`):
-   * Identidad de marca de Banco Agrícola (Grupo Bancolombia), psicología del color, tono empático y principios de UX anti-cobranza hostil.
+* **Plataforma**: **Anticipa Bancoagrícola** — Motor Predictivo, Cobranza Empática y Rentabilidad Activa.
+* **Reto Oficial**: Transformar la cobranza tradicional en una gestión preventiva que proteja el récord crediticio de los salvadoreños y multiplique el valor del banco.
+* **Diferenciador 1 (Precisión Auditable SSF)**: Modelos supervisados explicables mediante **valores SHAP**, garantizando predictibilidad 100% auditable ante la Superintendencia del Sistema Financiero.
+* **Diferenciador 2 (Cobranza Empática y Accionable)**: Detección de patrones locales salvadoreños (quincenas 15/30, remesas, ventana de buró de 10 días, red física de 890+ corresponsales) y orquestación con productos reales de Bancoagrícola mediante una escalera de 8 opciones.
+* **Diferenciador 3 (Rentabilidad Activa - Tier A)**: Detección proactiva de clientes con deuda saldada o 0 días de atraso (**Tier A Prime**) para detonar oportunidades automáticas de **cross-selling y up-selling** sin fricción.
 
 ---
 
-## 🎨 3. Frontend y Branding (Next.js 14 + Tailwind)
+## 🔄 2. Pipeline de la Aplicación
 
-* **Página de Lanzamiento ("Coming...")**:
-  * `app/page.tsx`: Interfaz minimalista con fondo negro `#000` y texto centrado `"Coming..."` con tipografía limpia y espaciada.
-  * `app/layout.tsx`: Shell limpio en fondo negro sin elementos distractores.
-  * `app/globals.css`: Estilos base con fondo negro por defecto.
-* **Tokens de Diseño de Bancoagrícola**:
-  * `tailwind.config.ts`: Paleta corporativa con prefijo `agricola-`:
-    * Azul Corporativo: `#003B71` (`agricola-blue`)
-    * Amarillo / Dorado: `#FDDA24` (`agricola-yellow`)
-    * Texto Oscuro Suave: `#282828` (`agricola-dark`)
-    * Fondos Secundarios: `#F8F8F8` y `#F4F4F4` (`agricola-bg`)
-    * Semáforo Preventivo: Verde (`#28A745`), Ámbar (`#E0A800`), Alerta Suave (`#DC3545`).
-* **Logos Oficiales en `public/`**:
-  * `public/bancoagricola_blackfont_logo.svg`: Logo para fondos claros.
-  * `public/bancoagricola_whitefont_logo.svg`: Logo para fondos oscuros.
-* **Paleta CSS de Referencia**:
-  * `Color_Palette.css`: Variables CSS extraídas de la web oficial de Bancoagrícola.
+El sistema unifica dos canales de interacción:
+1. **Flujo Outbound (Proactivo)**:
+   * Batch diario nocturno (03:00 AM) tras el cierre contable del core bancario.
+   * Filtro de supresión reactiva inmediata cuando el cliente realiza su pago.
+   * Inferencia con el modelo predictor y segmentación por Tiers:
+     * **Tier A Prime (Deuda saldada / 0 días)**: Bypass de cobranza + ofertas comerciales activas.
+     * **Tier A Preventivo (0-14 días)**: Recordatorio amistoso y facilidades de pago (alinear a quincena, débito automático).
+     * **Tier B y C (14-31 días y 32-120 días)**: Recordatorios prioritarios y agente conversacional empático dentro de límites duros de negocio.
+     * **Tier D-E+ (120-365+ días)**: Recordatorio formal; menor resistencia del bot y derivación inmediata a ejecutivo humano.
+2. **Flujo Inbound (Receptivo)**:
+   * El cliente inicia el contacto por canal digital (WhatsApp/Web/Voz).
+   * Consulta en tiempo real a Supabase (score de riesgo, factores SHAP, perfil financiero y categoría NCB-022).
+   * El agente resuelve la consulta principal del cliente aplicando las reglas duras de opciones elegibles.
 
 ---
 
-## ⚡ 4. Backend y APIs (BFF)
+## 🤖 3. Habilidades Especializadas para Asistentes de IA (`.agents/skills/`)
 
-* **Endpoint de Diagnóstico en Vivo**:
-  * `app/api/health/route.ts`: Monitorea en tiempo real el runtime de Next.js, la conexión con Supabase y la disponibilidad del microservicio de ML.
-* **Proxy de Predicción con Smart Fallback**:
-  * `app/api/predict/route.ts`: 
-    * Valida datos entrantes con esquemas estrictos de **Zod**.
-    * Intenta invocar el servicio FastAPI en Python.
-    * **Smart Fallback**: Si el servicio Python no está encendido, calcula un score heurístico determinista y factores de riesgo para que los desarrolladores de Frontend **nunca se queden bloqueados**.
-* **Cliente de Base de Datos**:
-  * `lib/supabase.ts`: Exporta el cliente público (`supabase`) y la función administrativa para el servidor (`getSupabaseAdmin`).
+* **`shadcn`**: Fuente primaria oficial para todos los componentes de interfaz de usuario.
+* **`motion`**: Estándar de animación de alto rendimiento con `motion/react` de [motion.dev](https://motion.dev).
+* **`backend`**: Pautas para Route Handlers en Next.js App Router, Zod validation y clientes de Supabase con service role.
+* **`security`**: Protocolos de seguridad bancaria, enmascaramiento estricto de PII (DUI, números de tarjeta) y Row-Level Security (RLS).
+* **`health-checks`**: Monitoreo de salud del BFF y del microservicio ML.
+* **`bancoagricola-ui`**: Identidad corporativa de Bancoagrícola: Amarillo `#FDDA24` (relleno, nunca texto) y Grafito `#2C2A29`. **El cliente nunca ve rojo.**
 
 ---
 
-## 🧠 5. Módulo de Machine Learning & MLOps (`ml/`)
+## 🎨 4. Frontend y Canal Conversacional (Next.js 14 App Router)
 
-* **Dependencias**:
-  * `ml/requirements.txt`: `lightgbm`, `xgboost`, `scikit-learn`, `shap`, `fastapi`, `uvicorn`, `pydantic`.
-* **Inferencia y Monitoreo**:
-  * `ml/api.py`: Microservicio FastAPI ultrarrápido (< 2 ms) con Swagger UI en `/docs`, `/health` y `POST /predict` para servir el modelo entrenado externamente por el equipo.
-  * Preparado para diseño de monitoreo de **Data Drift** (PSI / distribución de features de entrada) y alertas de re-entrenamiento.
-* **Guía de Ejecución**:
-  * `ml/README.md`: Documentación de ejecución y despliegue del microservicio.
-
-
----
-
-## 🗄️ 6. Base de Datos (Supabase)
-
-* **Esquema Inicial con RLS e Índices**:
-  * `supabase/migrations/20260906000000_initial_schema.sql`:
-    1. `customers`: Perfil básico y antigüedad del cliente.
-    2. `credit_accounts`: Tarjetas y préstamos activos con saldos y fechas de corte.
-    3. `financial_metrics`: Variables para el modelo (ingreso mensual, DTI, utilización, caída de ahorros).
-    4. `risk_assessments`: Evaluaciones del modelo, score 0-100 y factores explicativos SHAP en formato JSONB.
-    5. `empathic_interventions`: Registro de planes ofrecidos (fraccionamiento, readecuación) y respuestas del usuario.
-* **Datos de Prueba**:
-  * `supabase/seed.sql`: 2 perfiles salvadoreños completos de prueba (Carlos en riesgo moderado-alto vs Ana con perfil saludable).
-* **Variables de Entorno Locales**:
-  * `.env.local`: Configurado con el Project ID `zepewgqjqbcnfsmbqsad` y la URL `https://zepewgqjqbcnfsmbqsad.supabase.co`.
-  * `.env.example`: Plantilla documentada para nuevos compañeros.
+* **Canal tipo WhatsApp (`/chat/[cliente]`)**:
+  * Interfaz de mensajería optimizada para simular WhatsApp, canal recomendado explícitamente por Bancoagrícola.
+  * Modo Outbound (`/chat/karla`) y modo Inbound (`/chat/karla?apertura=cliente`).
+  * Respuestas en streaming, indicador visual de escritura y tipografía optimizada.
+* **Caso de Control (`/chat/marta`)**:
+  * Retorna `409 NO_CONTACTAR`: demuestra que el sistema discrimina inteligentemente y no molesta a clientes sanos.
+* **Tokens de Color Oficiales**:
+  * Amarillo Corporativo: `#FDDA24` (botones y badges con texto oscuro encima).
+  * Texto Oscuro Grafito: `#2C2A29` (máximo contraste y legibilidad).
+  * Tonos de tranquilidad: Verde esmeralda y ámbar suave. Rojo reservado estrictamente para consolas de riesgo internas.
 
 ---
 
-## 🚀 7. CI/CD Automatizado y Calidad de Código
+## ⚡ 5. Backend y Agente Conversacional (`lib/agent/` & `app/api/`)
 
-* **Pipeline de GitHub Actions**:
-  * `.github/workflows/ci.yml`:
-    * Se dispara automáticamente en cada **Pull Request** y **Push a `main`**.
-    * **Job 1 (Frontend)**: Verifica tipos de TypeScript (`tsc --noEmit`), corre linter (`npm run lint`) y valida la compilación (`npm run build`).
-    * **Job 2 (Machine Learning)**: Valida sintaxis estática y dependencias de Python (`py_compile`).
-* **Configuración de Linter no interactiva**:
-  * `.eslintrc.json`: Integra `next/core-web-vitals` previniendo que Next.js lance prompts interactivos que puedan romper el runner de GitHub Actions.
-* **Despliegue en Vercel**:
-  * `vercel.json`: Configurado para despliegue nativo de Next.js.
-* **Seguridad del Repositorio**:
-  * `.gitignore`: Protegido contra commits accidentales de `.env`, `.env*.local`, `node_modules`, `.next/`, binarios de ML (`.joblib`, `.pkl`) o datasets sintéticos pesados.
+* **Orquestador de Turnos (`app/api/chat/route.ts`)**:
+  * Procesa cada intervención del usuario coordinando el LLM, las tools tipadas y el validador.
+* **Capa de Inteligencia (`lib/agent/`)**:
+  * System prompt versionado con dialecto y voseo salvadoreño natural y cálido.
+  * Reglas de negociación, escalera de 8 opciones y límites de plazo/monto codificados en TypeScript (no librados a la improvisación del LLM).
+* **Tools Tipadas (Zod + Postgres Relacional)**:
+  * `consultarCliente`: Consulta datos exactos de deuda, fechas y categorización NCB-022.
+  * `consultarOpcionesValidas`: Devuelve solo los productos bancarios para los que el cliente califica en tiempo real.
+  * `registrarAcuerdo`: Mutación atómica en la tabla `acuerdos`.
+* **Validador Determinista**:
+  * Filtro de seguridad sin LLM que corre en cada turno antes de emitir la respuesta: bloquea términos hostiles, jergas de cobranza judicial, menciones de otros bancos, o alucinación de montos inexistentes.
+
+---
+
+## 🧠 6. Módulo de Machine Learning & Explicabilidad (`ml/`)
+
+* **Microservicio FastAPI (`ml/api.py`)**:
+  * Endpoints `/health`, `/docs` (Swagger UI) y `POST /predict`.
+  * Latencia de inferencia ultrarrápida (< 2 ms).
+* **Interpretabilidad SHAP**:
+  * Generación de los 3 factores principales que explican la probabilidad de mora.
+* **Smart Fallback en BFF (`app/api/predict/route.ts`)**:
+  * Si el microservicio Python está inactivo, el backend de Next.js calcula un score heurístico determinista calibrado, permitiendo que el Frontend funcione de forma ininterrumpida.
+
+---
+
+## 🗄️ 7. Base de Datos Relacional (Supabase PostgreSQL)
+
+Esquema vigente versionado en `supabase/migrations/20260912150000_create_agent_schema.sql`:
+
+1. **`clientes`**: Perfil socioeconómico, calendario de ingresos (quincenas, remesas), obligaciones de crédito, días de mora de la cuota más antigua y score predictivo.
+2. **`conversaciones`**: Metadatos de la sesión, canal (`texto`/`voz`), modo de voz (`pipeline`/`s2s`/`NULL`), apertura (`agente`/`cliente`) y estado final.
+3. **`turnos`**: Transcripción cronológica completa con latencia en milisegundos, consumo de tokens, resultado del validador y versión del modelo.
+4. **`acuerdos`**: Registro formal del cierre: tipo de solución acordada, monto, fecha pactada o motivo documentado de no-acuerdo.
+
+**Generador de Datos (`scripts/generate-seed.mjs`)**:
+* Produce 308 perfiles: los 8 personajes héroes del pitch más 300 clientes sintéticos con distribución de señales realista y determinista.
+
+---
+
+## 🛡️ 8. Suites de Verificación y Control
+
+* **`npm run verify:reglas`**: Suite de pruebas unitarias deterministas (23/23) sin dependencias externas; valida el cálculo de descalces, fechas sugeridas, elegibilidad de productos y rechazo de respuestas indebidas.
+* **`npm run ataque`**: Batería de 20 ataques de estrés conversacional (plazos irreales, condonación indebida, bancos competidores, prompt injection).
+* **`npm run demo:reset`**: Script de reinicio inmediato para limpiar el estado de la base de datos entre ensayos del pitch.
