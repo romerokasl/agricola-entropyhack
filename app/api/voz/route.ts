@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { continuarConversacion, ErrorSesion, iniciarConversacion } from "@/lib/agent/sesion";
+import { registrarLatenciaTts } from "@/lib/db/conversaciones";
 import { normalizarParaVoz } from "@/voice/pipeline/normalizador";
 import { obtenerSttProvider } from "@/voice/pipeline/stt";
 import { obtenerTtsProvider } from "@/voice/pipeline/tts";
@@ -138,6 +139,10 @@ export async function POST(req: NextRequest) {
       const habladoInicio = paraHablar(inicio.turnos);
       const audioInicio = await sintetizar(habladoInicio);
 
+      if (audioInicio && inicio.turno) {
+        await registrarLatenciaTts(inicio.turno.turnoId, audioInicio.latenciaMs);
+      }
+
       return NextResponse.json({
         success: true,
         data: {
@@ -158,7 +163,9 @@ export async function POST(req: NextRequest) {
             ? {
                 metricas: {
                   latenciaMs: inicio.turno.latenciaMs,
-                  latenciaLlmMs: inicio.turno.latenciaMs,
+                  latenciaLlmMs: inicio.turno.latenciaLlmMs,
+                  latenciaValidadorMs: inicio.turno.latenciaValidadorMs,
+                  latenciaTtsMs: audioInicio?.latenciaMs ?? null,
                   validadorOk: inicio.turno.validadorOk,
                 },
               }
@@ -194,10 +201,14 @@ export async function POST(req: NextRequest) {
     }
 
     const { conversacionId } = parsed.data;
-    const respuesta = await continuarConversacion({ conversacionId, texto });
+    const respuesta = await continuarConversacion({ conversacionId, texto, latenciaSttMs });
 
     const hablado = normalizarParaVoz(respuesta.turno.texto);
     const audio = await sintetizar(hablado);
+
+    // El turno ya está persistido: su latencia de TTS se completa acá porque la síntesis
+    // ocurre después de que el texto es transcripción.
+    if (audio) await registrarLatenciaTts(respuesta.turno.turnoId, audio.latenciaMs);
 
     return NextResponse.json({
       success: true,
@@ -215,7 +226,8 @@ export async function POST(req: NextRequest) {
           // que solo la cascada puede dar.
           latenciaMs: respuesta.turno.latenciaMs,
           latenciaSttMs,
-          latenciaLlmMs: respuesta.turno.latenciaMs,
+          latenciaLlmMs: respuesta.turno.latenciaLlmMs,
+          latenciaValidadorMs: respuesta.turno.latenciaValidadorMs,
           latenciaTtsMs: audio?.latenciaMs ?? null,
           validadorOk: respuesta.turno.validadorOk,
         },

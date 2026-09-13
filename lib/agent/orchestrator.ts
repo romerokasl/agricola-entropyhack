@@ -23,11 +23,21 @@ export interface ResultadoTurno {
   texto: string;
   validadorOk: boolean;
   validadorMotivo: MotivoRechazo | null;
+  /** Round-trip del turno. Campo común con S2S. */
   latenciaMs: number;
+  /** Desglose por etapa. Lo que S2S no puede dar. */
+  latenciaSttMs: number | null;
+  latenciaLlmMs: number;
+  latenciaValidadorMs: number;
   tokensIn: number | null;
   tokensOut: number | null;
   modeloVersion: string;
   cerroConversacion: boolean;
+  /**
+   * Para completar después la latencia del TTS, que ocurre una vez que el turno ya
+   * está persistido.
+   */
+  turnoId: string;
 }
 
 function aMensajes(historial: readonly Turno[]): MensajeLlm[] {
@@ -52,6 +62,12 @@ export async function ejecutarTurno(params: {
   senal?: SenalRiesgo | null;
   /** Texto o voz. Cambia cómo se redacta el turno, nunca qué se puede ofrecer. */
   canal?: Canal;
+  /**
+   * Cuánto tardó transcribir a la persona. Se recibe hecho porque la etapa STT ocurre
+   * antes de este turno; acá solo se registra para que el desglose quede completo en la
+   * misma fila.
+   */
+  latenciaSttMs?: number | null;
 }): Promise<ResultadoTurno> {
   const { cliente, conversacionId, apertura, historial, senal } = params;
   const hoy = params.hoy ?? new Date();
@@ -77,14 +93,41 @@ export async function ejecutarTurno(params: {
   let texto = "";
   let truncada = false;
 
+  // Se acumulan por etapa en vez de medir una sola vez: el ciclo de herramientas puede
+  // llamar al modelo varias veces, y el validador corre hasta dos.
+  let latenciaLlmMs = 0;
+  let latenciaValidadorMs = 0;
+
+  const cronometrar = async <T>(fn: () => Promise<T>, sumar: (ms: number) => void): Promise<T> => {
+    const desde = Date.now();
+    try {
+      return await fn();
+    } finally {
+      sumar(Date.now() - desde);
+    }
+  };
+
+  const validarCronometrado = (candidato: string, ctx: Parameters<typeof validar>[1]) => {
+    const desde = Date.now();
+    const r = validar(candidato, ctx);
+    latenciaValidadorMs += Date.now() - desde;
+    return r;
+  };
+
   // --- Ciclo de herramientas -------------------------------------------------
   for (let iteracion = 0; iteracion < MAX_ITERACIONES_TOOLS; iteracion += 1) {
-    const respuesta = await proveedor.generar({
-      systemPrompt: SYSTEM_PROMPT,
-      contexto,
-      historial: mensajes,
-      tools: DECLARACIONES,
-    });
+    const respuesta = await cronometrar(
+      () =>
+        proveedor.generar({
+          systemPrompt: SYSTEM_PROMPT,
+          contexto,
+          historial: mensajes,
+          tools: DECLARACIONES,
+        }),
+      (ms) => {
+        latenciaLlmMs += ms;
+      },
+    );
 
     tokensIn = respuesta.tokensIn;
     tokensOut = respuesta.tokensOut;
@@ -120,7 +163,7 @@ export async function ejecutarTurno(params: {
         motivo: "truncada" as const,
         notaCorrectiva: "Tu respuesta quedó cortada a la mitad. Escribila completa en 2 o 3 frases.",
       }
-    : validar(texto, ctxValidacion);
+    : validarCronometrado(texto, ctxValidacion);
 
   // `validadorOk` registra si la respuesta pasó SIN intervención. Un reintento que
   // después salió bien igual cuenta como intervención: si no, la métrica "tasa de
@@ -128,14 +171,23 @@ export async function ejecutarTurno(params: {
   let motivoIntervencion = validacion.motivo;
 
   if (!validacion.ok && validacion.notaCorrectiva) {
-    const reintento = await proveedor.generar({
-      systemPrompt: SYSTEM_PROMPT,
-      contexto,
-      historial: mensajes,
-      tools: DECLARACIONES,
-      notaCorrectiva: validacion.notaCorrectiva,
-    });
-    const segundaValidacion = validar(reintento.texto, ctxValidacion);
+    // Se copia afuera del closure: dentro del callback TypeScript ya no puede sostener
+    // el estrechamiento que hizo el `if`.
+    const notaCorrectiva = validacion.notaCorrectiva;
+    const reintento = await cronometrar(
+      () =>
+        proveedor.generar({
+          systemPrompt: SYSTEM_PROMPT,
+          contexto,
+          historial: mensajes,
+          tools: DECLARACIONES,
+          notaCorrectiva,
+        }),
+      (ms) => {
+        latenciaLlmMs += ms;
+      },
+    );
+    const segundaValidacion = validarCronometrado(reintento.texto, ctxValidacion);
     if (segundaValidacion.ok) {
       texto = reintento.texto;
       tokensIn = reintento.tokensIn;
@@ -147,33 +199,45 @@ export async function ejecutarTurno(params: {
     }
   }
 
-  const resultado: ResultadoTurno = {
-    texto,
-    validadorOk: motivoIntervencion === null,
-    validadorMotivo: motivoIntervencion,
-    latenciaMs: Date.now() - inicio,
-    tokensIn,
-    tokensOut,
-    modeloVersion: `${proveedor.modeloVersion}/${VERSION_PROMPT}`,
-    cerroConversacion,
-  };
+  const latenciaMs = Date.now() - inicio;
+  const latenciaSttMs = params.latenciaSttMs ?? null;
+  const modeloVersion = `${proveedor.modeloVersion}/${VERSION_PROMPT}`;
+  const validadorOk = motivoIntervencion === null;
 
-  await agregarTurno({
+  const turnoId = await agregarTurno({
     conversacionId,
     // El historial que llega ya incluye el turno del cliente de este intercambio,
     // así que el turno del agente va justo después.
     indice: historial.length,
     rol: "agente",
-    texto: resultado.texto,
+    texto,
     metricas: {
-      latenciaMs: resultado.latenciaMs,
-      tokensIn: resultado.tokensIn,
-      tokensOut: resultado.tokensOut,
-      validadorOk: resultado.validadorOk,
-      validadorMotivo: resultado.validadorMotivo,
-      modeloVersion: resultado.modeloVersion,
+      latenciaMs,
+      tokensIn,
+      tokensOut,
+      validadorOk,
+      validadorMotivo: motivoIntervencion,
+      modeloVersion,
+      latenciaSttMs,
+      latenciaLlmMs,
+      latenciaValidadorMs,
+      // El TTS todavía no corrió: se completa después con `registrarLatenciaTts`.
+      latenciaTtsMs: null,
     },
   });
 
-  return resultado;
+  return {
+    texto,
+    validadorOk,
+    validadorMotivo: motivoIntervencion,
+    latenciaMs,
+    latenciaSttMs,
+    latenciaLlmMs,
+    latenciaValidadorMs,
+    tokensIn,
+    tokensOut,
+    modeloVersion,
+    cerroConversacion,
+    turnoId,
+  };
 }

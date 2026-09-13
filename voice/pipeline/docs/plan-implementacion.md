@@ -177,15 +177,24 @@ Sin instalar nada, sin API keys nuevas.
 - **Listo cuando:** el mismo flujo de Fase 1 corre con `STT_PROVIDER=deepgram` y
   `TTS_PROVIDER=google`, cambiando solo `.env.local`.
 
-### Fase 3 — Instrumentación por etapa (~1 h, **bloqueada**)
-El contrato de `voice/README.md` §3 pide desglose de latencia por etapa, pero `turnos`
-solo tiene `latencia_ms`. Falta una migración con cuatro columnas nullable
-(`latencia_stt_ms`, `latencia_llm_ms`, `latencia_validador_ms`, `latencia_tts_ms`).
+### Fase 3 — Instrumentación por etapa ✅
+`turnos` ya tiene las cuatro columnas (`20260913180000_latencia_por_etapa_en_turnos.sql`)
+y el flujo las llena. `latencia_ms` sigue siendo el campo común con S2S; el desglose es
+el extra que solo la cascada puede dar.
 
-> ⛔ **No correr esta migración todavía.** Hay una corrección de base de datos pendiente
-> de un tercer origen; meter una migración ahora provoca un cuarto conflicto. Mientras
-> tanto el desglose viaja en la respuesta de la API y el dashboard usa `latencia_ms`
-> total, que es el campo común con S2S de todas formas.
+Cómo se mide cada una:
+
+- **STT** — la produce quien transcribe y viaja hasta la fila del turno como parámetro.
+- **LLM** y **validador** — se acumulan dentro de `ejecutarTurno`, no se miden una sola
+  vez: el ciclo de herramientas puede llamar al modelo varias veces y el validador corre
+  hasta dos.
+- **TTS** — se completa con un `update` posterior, porque la síntesis ocurre **después**
+  de persistir el turno. Es la única etapa que no se puede saber antes de guardar, y es
+  consecuencia directa del orden que sostiene la arquitectura: el texto es transcripción
+  antes de ser audio.
+
+**Hallazgo medido que sirve para el pitch: el validador cuesta 0 ms.** El guardrail
+determinista —el argumento central frente a S2S— no se paga en latencia.
 
 ### Fase 4 — Ensayo y ataque por voz
 - Correr la batería (`npm run ataque`) sobre el modelo del demo.

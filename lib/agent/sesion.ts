@@ -142,6 +142,11 @@ export async function continuarConversacion(params: {
   conversacionId: string;
   texto: string;
   hoy?: Date;
+  /**
+   * Cuánto tardó transcribir a la persona, cuando el canal es de voz. Viaja hasta la
+   * fila del turno para que el desglose por etapa quede completo en un solo lugar.
+   */
+  latenciaSttMs?: number | null;
 }): Promise<RespuestaConversacion> {
   const hoy = params.hoy ?? new Date();
 
@@ -177,6 +182,7 @@ export async function continuarConversacion(params: {
     // con una sola señal auditable.
     senal: conversacion.senal ? rehidratarSenal(conversacion.senal) : null,
     canal: conversacion.canal,
+    latenciaSttMs: params.latenciaSttMs ?? null,
   });
 
   return {

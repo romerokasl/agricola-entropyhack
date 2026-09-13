@@ -168,11 +168,11 @@ export async function agregarTurno(params: {
   rol: RolTurno;
   texto: string;
   metricas?: MetricasTurno;
-}): Promise<void> {
+}): Promise<string> {
   const { indice, metricas } = params;
 
-  await conReintentos("No se pudo guardar el turno", async () => {
-    const { error } = await getSupabaseAdmin()
+  return conReintentos("No se pudo guardar el turno", async () => {
+    const { data, error } = await getSupabaseAdmin()
       .from("turnos")
       .insert({
         conversacion_id: params.conversacionId,
@@ -185,10 +185,34 @@ export async function agregarTurno(params: {
         validador_ok: metricas?.validadorOk ?? null,
         validador_motivo: metricas?.validadorMotivo ?? null,
         modelo_version: metricas?.modeloVersion ?? null,
-      });
+        latencia_stt_ms: metricas?.latenciaSttMs ?? null,
+        latencia_llm_ms: metricas?.latenciaLlmMs ?? null,
+        latencia_validador_ms: metricas?.latenciaValidadorMs ?? null,
+        latencia_tts_ms: metricas?.latenciaTtsMs ?? null,
+      })
+      .select("id")
+      .single<{ id: string }>();
 
-    if (error) throw new Error(error.message);
+    if (error || !data) throw new Error(error?.message ?? "sin datos");
+    return data.id;
   });
+}
+
+/**
+ * La síntesis ocurre DESPUÉS de persistir el turno — el texto ya pasó el validador y ya
+ * es transcripción — así que su latencia se completa aparte. Es la única etapa que no se
+ * puede medir antes de guardar.
+ *
+ * No usa reintentos a propósito: es telemetría del dashboard, no parte del flujo. Si
+ * falla, la conversación no se entera.
+ */
+export async function registrarLatenciaTts(turnoId: string, latenciaMs: number): Promise<void> {
+  const { error } = await getSupabaseAdmin()
+    .from("turnos")
+    .update({ latencia_tts_ms: latenciaMs })
+    .eq("id", turnoId);
+
+  if (error) console.error(`[voz] no se pudo registrar la latencia de TTS: ${error.message}`);
 }
 
 export async function guardarAcuerdo(params: {
