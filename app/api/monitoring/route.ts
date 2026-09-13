@@ -75,7 +75,7 @@ export async function GET() {
         success: false,
         error: {
           code: "MONITORING_FETCH_ERROR",
-          message: error instanceof Error ? error.message : "Error al consultar telemetría MLOps",
+          message: "Error al consultar telemetría MLOps",
         },
       },
       { status: 500 }

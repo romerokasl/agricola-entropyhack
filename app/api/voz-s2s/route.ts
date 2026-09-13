@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
   } catch (e: unknown) {
     if (e instanceof ErrorSesion) return error(e.codigo, e.message, e.estadoHttp);
     if (e instanceof ErrorS2S) return error(e.codigo, e.message, e.estadoHttp);
-    return error("SERVER_ERROR", e instanceof Error ? e.message : "Error interno", 500);
+    console.error("[api/voz-s2s]", e);
+    return error("SERVER_ERROR", "Error interno", 500);
   }
 }

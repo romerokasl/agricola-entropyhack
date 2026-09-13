@@ -166,7 +166,8 @@ export async function POST(req: NextRequest) {
       source: "nextjs_smart_fallback",
     });
   } catch (error: unknown) {
-    const errMessage = error instanceof Error ? error.message : "Error interno";
+    console.error("[api/predict]", error);
+    const errMessage = "Error interno";
     return NextResponse.json(
       {
         success: false,

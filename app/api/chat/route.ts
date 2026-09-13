@@ -105,7 +105,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: unknown) {
     if (e instanceof ErrorSesion) return error(e.codigo, e.message, e.estadoHttp);
-    const mensaje = e instanceof Error ? e.message : "Error interno";
+    console.error("[api/chat]", e);
+    const mensaje = "Error interno";
     return error("SERVER_ERROR", mensaje, 500);
   }
 }
