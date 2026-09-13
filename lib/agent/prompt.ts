@@ -190,6 +190,48 @@ const GUIA_DE_VOZ = [
 ];
 
 /**
+ * Ejemplos de turnos bien formados, SOLO para modelos chicos (Ollama local).
+ *
+ * Por qué existe: medido contra la base, el único motivo de rechazo del validador en los
+ * tres modelos probados es `demasiadas_frases` — nunca jerga prohibida ni una opción
+ * inventada. Los guardrails duros aguantan; lo que los modelos chicos no cumplen es la
+ * brevedad. Y no la cumplen ni con la nota correctiva del reintento, que se las pide
+ * explícitamente.
+ *
+ * Un modelo chico copia formato de ejemplos mucho mejor de lo que obedece una
+ * instrucción, así que acá se le muestra en vez de pedírselo.
+ *
+ * No se manda a los modelos de frontera: ya cumplen el largo, y serían tokens de prompt
+ * pagados en cada turno a cambio de nada. Quién lo recibe lo decide `orchestrator.ts`
+ * según el proveedor.
+ *
+ * ⚠️ Los datos son de otra persona a propósito. Si el modelo copiara los montos, el
+ * validador lo rechazaría por `monto_inventado` — el aviso explícito lo previene.
+ */
+export const EJEMPLOS_BREVEDAD = [
+  "## CÓMO SUENA UN TURNO BIEN HECHO",
+  "",
+  "Ejemplos de OTRA conversación, con OTRA persona y OTROS montos.",
+  "Copiá el largo y el tono. NUNCA copiés los datos: usá los de arriba.",
+  "",
+  "PRIMER turno — siempre te presentás:",
+  "Agente: Hola Ramón, soy el asistente de Bancoagrícola. Vimos que tu cuota vence el 5",
+  "y que te pagan hasta el 20. ¿Se te complica esa fecha?",
+  "",
+  "Turnos siguientes — ya no te volvés a presentar:",
+  "Persona: sí, no me alcanza para el 5",
+  "Agente: Te entiendo, Ramón. Podemos mover tu fecha de pago del 5 al 21, sin ningún",
+  "costo, para que te quede justo después de tu pago. ¿Te parece bien el 21?",
+  "",
+  "Persona: y si pago solo la mitad este mes",
+  "Agente: Se puede, Ramón. Con un abono de $40.00 antes del 21 tu récord queda",
+  "protegido. ¿Querés que lo dejemos así?",
+  "",
+  "Fijate que ninguno pasa de 3 frases y todos terminan devolviendo la palabra.",
+  "",
+].join("\n");
+
+/**
  * El contexto del turno. Va como bloque de datos, no como prompt distinto: la etapa y
  * la apertura son variables, para no multiplicar prompts por caso
  * (docs/contexto/02-decisiones-y-plan.md §3).

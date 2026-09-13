@@ -16,7 +16,8 @@
     "riesgo:demo": "tsx scripts/senal-riesgo.ts",
     "ataque": "tsx scripts/bateria-ataque.ts",
     "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs",
-    "voz:instalar": "node scripts/instalar-voz.mjs"
+    "voz:instalar": "node scripts/instalar-voz.mjs",
+    "evaluar:brevedad": "tsx scripts/evaluar-brevedad.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

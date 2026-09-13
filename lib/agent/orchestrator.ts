@@ -1,7 +1,13 @@
 import { agregarTurno } from "../db/conversaciones";
 import type { SenalRiesgo } from "../riesgo/types";
 import { obtenerLlmProvider, type MensajeLlm } from "./llm";
-import { construirContexto, DISPARADOR_APERTURA, SYSTEM_PROMPT, VERSION_PROMPT } from "./prompt";
+import {
+  construirContexto,
+  DISPARADOR_APERTURA,
+  EJEMPLOS_BREVEDAD,
+  SYSTEM_PROMPT,
+  VERSION_PROMPT,
+} from "./prompt";
 import { DECLARACIONES, ejecutarTool } from "./tools";
 import type { Apertura, Canal, Cliente, Turno } from "./types";
 import { respuestaSegura, validar, type MotivoRechazo } from "./validator";
@@ -74,7 +80,13 @@ export async function ejecutarTurno(params: {
   const canal = params.canal ?? "texto";
 
   const proveedor = obtenerLlmProvider();
-  const contexto = construirContexto(cliente, apertura, hoy, senal, canal);
+
+  // Los ejemplos de brevedad van solo a los modelos locales, que son los que fallan el
+  // largo. A un modelo de frontera serían tokens de prompt en cada turno a cambio de
+  // nada. Ver `EJEMPLOS_BREVEDAD` para el porqué medido.
+  const base = construirContexto(cliente, apertura, hoy, senal, canal);
+  const contexto = proveedor.nombre === "ollama" ? `${base}\n${EJEMPLOS_BREVEDAD}` : base;
+
   const inicio = Date.now();
 
   const mensajes: MensajeLlm[] = aMensajes(historial);
