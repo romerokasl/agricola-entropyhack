@@ -132,11 +132,17 @@ function crearPiperProvider(): TtsProvider {
 /**
  * Proveedor de voz neuronal de Microsoft Edge (Azure Speech Neural Voices).
  * Gratuito, sin credenciales, con voces altamente expresivas, cálidas y empáticas.
- * Por defecto usa `es-SV-LorenaNeural` (Lorena - El Salvador) para entonación salvadoreña auténtica.
- * Otras opciones válidas en TTS_VOZ: `es-SV-RodrigoNeural` (masculina SV), `es-MX-DaliaNeural` (atención al cliente clásica).
+ * Por defecto usa `es-SV-RodrigoNeural` (Rodrigo - El Salvador, MASCULINA) para entonación salvadoreña auténtica.
+ *
+ * RATING DE VOCES MASCULINAS (mejor a peor para empatía/naturalidad):
+ * 1. es-SV-RodrigoNeural ⭐⭐⭐⭐⭐ (Friendly + Positive, acento salvadoreño natural)
+ * 2. es-MX-JorgeNeural ⭐⭐⭐⭐ (Friendly + Positive, acento mexicano)
+ * 3. es-MX-LorenzoEsCLNeural ⭐⭐⭐⭐ (Friendly + Positive, variante regional)
+ *
+ * Otras opciones: `es-MX-DaliaNeural` (femenina), `es-SV-LorenaNeural` (femenina SV).
  */
 function crearEdgeTtsProvider(): TtsProvider {
-  const voz = process.env.TTS_VOZ ?? "es-SV-LorenaNeural";
+  const voz = process.env.TTS_VOZ ?? "es-SV-RodrigoNeural";
 
   return {
     nombre: `edge/${voz}`,
