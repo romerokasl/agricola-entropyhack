@@ -58,7 +58,8 @@ erDiagram
         int dia_corte "Día del mes de corte"
         int dia_pago "Día del mes límite de pago"
         decimal tasa_interes "Tasa de interés pactada"
-        string categoria_riesgo_actual "A1, A2, B, C, D, E (Norma SSF NCB-022)"
+        string categoria_riesgo_actual "A1, A2, B, C1, C2, D1, D2, E (Norma SSF NCB-022, Art.18) — ver docs/contexto/05-productos-y-ncb022.md"
+        int dias_mora_cuota_mas_antigua "Base real de la clasificación (Anexo 1, num.9): decide la categoría"
         boolean tiene_debito_automatico "Indicador de adhesión a débito"
     }
 

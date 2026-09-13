@@ -84,6 +84,8 @@ El dataset está generado por `scripts/dataset.mjs` y es determinista. Las tres 
 | `/chat/karla?apertura=cliente` | La persona escribe primero. El agente igual se presenta y no vuelve a preguntar lo que ya le dijeron. |
 | `/chat/marta` | **El control.** Devuelve 409: el sistema se niega a abrir conversación con quien no hay por qué contactar. |
 
+> **¿Qué funciona hoy?** Ver [`docs/estado-del-agente.md`](docs/estado-del-agente.md) — el estado verificado contra Supabase y Gemini reales, con la conversación de Karla completa y lo que falta.
+
 ### 2.3 Verificación
 
 ```bash
