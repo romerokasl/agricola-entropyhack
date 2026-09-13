@@ -36,9 +36,11 @@ cambia según el enfoque.
 | System prompt, reglas de negociación, guardrails, escalera de opciones | `docs/contexto/01-reglas-del-agente.md` + su implementación en `lib/agent/` | El contenido de negocio no cambia si el audio se genera por pipeline o por S2S |
 | Esquema de datos (`clientes`, `conversaciones`, `turnos`, `acuerdos`) | `supabase/migrations/` | Ambos enfoques escriben a las mismas tablas — es la única forma de comparar de verdad |
 | Tools tipadas (`consultarCliente`, `consultarOpcionesValidas`, `registrarAcuerdo`) | `lib/` (o equivalente Python en `ml/`) | Función de negocio, no de audio |
+| **La conversación entera (abrir, decidir si se contacta, correr el turno, persistir)** | **`lib/agent/sesion.ts`** | **Es lo mismo en chat y en llamada. `app/api/chat` ya es un envoltorio sobre esto; el orquestador de voz tiene que ser otro** |
+| **Señal de riesgo (modelo vivo + score de lote + reglas locales)** | **`lib/riesgo/`** | **Decide a quién se contacta y por dónde empezar. No cambia porque la respuesta salga por un parlante** |
 | Canal de texto (WhatsApp-like), UI del chat | `app/` | No es un canal de voz; ninguno de los dos enfoques lo toca |
 | Dashboard y métricas | `app/` + tablas de Supabase | Tiene que mostrar **ambos enfoques comparados**, no uno solo |
-| Scorer de riesgo (`/api/predict`) | `ml/` | Ya está congelado, no depende de voz |
+| Modelo predictivo y su microservicio | `ml/` | Lo consume `lib/riesgo/`, no los enfoques de voz directamente |
 
 ## Qué es específico de cada enfoque (no se comparte)
 
@@ -56,7 +58,11 @@ enfoques deben cumplir esto sin excepción**:
 
 1. **Usar las mismas tools y el mismo contenido de reglas** — ninguno de los dos
    enfoques puede tener su propia copia de la escalera de opciones o de los límites
-   de negociación. Un solo lugar, ambos lo consumen.
+   de negociación. Un solo lugar, ambos lo consumen. En la práctica esto se cumple
+   solo: si llamás a `iniciarConversacion` / `continuarConversacion` de
+   `lib/agent/sesion.ts`, heredás las reglas, la señal de riesgo, el validador y las
+   tablas sin escribir nada. Ver el ejemplo de uso en
+   [`../docs/senal-de-riesgo.md`](../docs/senal-de-riesgo.md).
 2. **Persistir cada turno en `conversaciones`/`turnos` con `canal` + `modo_voz`** —
    `canal` es `'texto'` o `'voz'` (NOT NULL) y `modo_voz` es `'pipeline'`, `'s2s'` o
    NULL cuando el canal es texto. Así el dashboard filtra y compara sin tocar el

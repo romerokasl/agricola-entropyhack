@@ -31,3 +31,19 @@ texto — todo eso vive en el código global (ver contrato en `../README.md`).
   ¿function calling intermedio que fuerza una pausa?)
 - Cómo se decide el resultado si el validador detecta una violación a mitad de
   la respuesta hablada
+
+---
+
+## Punto de entrada
+
+La lógica de conversación es compartida y no se reimplementa acá: `lib/agent/sesion.ts`
+expone `iniciarConversacion` / `continuarConversacion`, que ya traen la señal de riesgo,
+la escalera, el validador y la persistencia. Este enfoque las llama con
+`canal: "voz"` y `modoVoz: "s2s"`; lo propio de esta carpeta es el transporte de audio.
+
+El ejemplo de uso está en [`../pipeline/README.md`](../pipeline/README.md) y el detalle
+de la señal de riesgo en [`../../docs/senal-de-riesgo.md`](../../docs/senal-de-riesgo.md).
+
+⚠️ El contrato compartido exige que **el validador determinista corra siempre**. En S2S
+no hay un punto natural donde meterlo entre el modelo y el parlante: resolver eso es
+parte del alcance de esta carpeta, y es el argumento que el jurado va a examinar.

@@ -1,7 +1,8 @@
 # Estado del agente conversacional
 
-> Última verificación: **12 de septiembre de 2026**, contra Supabase y Gemini reales.
-> No es una estimación: cada dato de acá salió de correrlo.
+> Última verificación: **13 de septiembre de 2026**. El flujo conversacional, contra
+> Supabase y Gemini reales (12 sep); la señal de riesgo, contra `ml/api.py` levantado
+> de verdad (13 sep). No es una estimación: cada dato de acá salió de correrlo.
 
 ## Resumen en una línea
 
@@ -53,11 +54,43 @@ Se deriva de sus datos, no de un flag en la base. Y si **ella** escribe primero,
 permite — porque en producción un cliente siempre puede iniciar. Verificado: Wilber
 (6 días de atraso) sí dispara contacto; Marta no.
 
+### El modelo predictivo alimenta la conversación
+
+`lib/riesgo/` conecta el modelo de `ml/` con el agente. Antes eran dos sistemas que no
+se hablaban: el modelo tenía su microservicio y el agente leía una columna estática del
+seed. Ahora cada conversación abre con una **señal de riesgo** que combina tres vistas
+—el microservicio llamado en vivo, el score de lote de la fila y las reglas de calendario
+salvadoreño— y que decide a quién se contacta y por qué escalón empezar.
+
+Medido con el servicio levantado: **2–4 ms por cliente** (presupuesto: 1,500 ms), los
+8 personajes conservan su banda y su decisión de contacto, y **el control se mantiene**
+—Marta puntúa bajo en las tres vistas y sigue fuera del conjunto de contacto—.
+Sin el servicio levantado, idéntico.
+
+Lo que el modelo aporta es la señal; **los textos que el servicio redacta se descartan**
+(prometen beneficios que no existen y saltan al escalón más caro), con prueba de
+regresión que lo verifica. Detalle completo en
+[`senal-de-riesgo.md`](senal-de-riesgo.md).
+
+Se comprueba con `npm run riesgo:demo`.
+
+### La conversación ya no depende del canal
+
+`lib/agent/sesion.ts` es la conversación sin canal: abre, decide si el sistema tiene
+derecho a contactar, corre el turno por el validador y lo persiste con `canal` y
+`modo_voz`. `app/api/chat/route.ts` quedó como un envoltorio HTTP delgado sobre esas dos
+funciones, y el track de voz va a ser otro envoltorio sobre las mismas — con lo que
+hereda gratis la señal de riesgo, la escalera y el validador. Es el contrato de
+`voice/README.md` cumplido en código y no solo en prosa.
+
 ### Verificación automática
 
-`npm run verify:reglas` — **23/23**, sin red ni base de datos. Cubre la detección de
+`npm run verify:reglas` — **42/42**, sin base de datos. Cubre la detección de
 desalineación de quincena y de remesa, la fecha sugerida, la escalera por cliente, los
-límites de plazo, y los rechazos del validador.
+límites de plazo, los rechazos del validador, y ahora también la composición de la señal
+de riesgo, que la señal no pueda apagar un contacto justificado ni inventar opciones
+fuera de la escalera, que el puntaje y la jerga de riesgo no se filtren al prompt, y que
+el texto del servicio de ML se descarte.
 
 `npm run type-check`, `npm run lint` y `npm run build`: los tres limpios.
 
@@ -74,8 +107,8 @@ forma determinista (mismo seed → mismo archivo byte a byte). Ver
 | Falta | Nota |
 |---|---|
 | **Batería de 20 ataques ejecutada** | El arnés está listo (`npm run ataque`) y escribe la tabla para el README. No se corrió por cuota. **Es lo siguiente más importante**: el jurado anunció que va a intentar romper el agente. |
-| **Dashboard** | 10 puntos. Los datos que necesita ya se persisten: latencia, tokens, `validador_ok` y acuerdos por tipo. Es sobre todo lectura y presentación. |
-| **Voz** | `voice/pipeline/` y `voice/speech-to-speech/` siguen vacíos de código. La capa compartida que ambos van a consumir ya existe. |
+| **Dashboard** | 10 puntos. Los datos que necesita ya se persisten: latencia, tokens, `validador_ok`, acuerdos por tipo y —desde la migración `20260913120000`— la señal de riesgo y el motivo de contacto por conversación. Es sobre todo lectura y presentación. |
+| **Voz** | `voice/pipeline/` y `voice/speech-to-speech/` siguen vacíos de código de audio. Lo que ya NO falta: la capa compartida que ambos consumen (`lib/agent/sesion.ts`), la señal de riesgo y la guía de redacción para voz en el prompt. Falta STT, TTS y la latencia por etapa. |
 | **Fallback a Groq** | Decidido desde el principio, sin construir. Dejó de ser opcional (ver la sección de cuota). |
 | **Resumen de historial** | No implementado a propósito: se dispara pasados 10 turnos y el flujo de Karla tiene 5. Antes de eso es costo sin beneficio. |
 
@@ -138,3 +171,9 @@ npm run dev
 | `/chat/marta` | El control: 409, el sistema no la contacta |
 
 `npm run demo:reset` deja el estado limpio entre ensayos.
+
+⚠️ **Antes de correr el demo con la señal de riesgo hay que aplicar la migración nueva**
+(`20260913120000_senal_riesgo_en_conversaciones.sql`). Sin ella, `crearConversacion`
+falla al insertar columnas que no existen. Es idempotente, pero `npm run db:migrate`
+reejecuta todos los archivos en orden y el primero ya no se puede volver a aplicar: lo
+más rápido es pegar solo ese archivo en el SQL Editor del dashboard.

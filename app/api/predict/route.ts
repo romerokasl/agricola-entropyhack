@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+/**
+ * Superficie de demostración del scorer, independiente de la conversación.
+ *
+ * OJO: **el agente NO pasa por acá.** El camino conversacional es
+ * `lib/riesgo/` → `ml/api.py` directo, sin este salto HTTP del servidor a sí mismo,
+ * y descartando los textos (`empatheticMessage`, `suggestedSolution`) que este
+ * endpoint sí devuelve.
+ *
+ * Esos textos existen para mostrar qué recomienda el modelo por su cuenta, y son
+ * justamente el contraejemplo del pitch: prometen beneficios que no existen y saltan
+ * al escalón más caro de la escalera sin haber preguntado nada. **No renderizarlos en
+ * ninguna pantalla que vea un cliente.** Ver docs/senal-de-riesgo.md.
+ */
+
 const PredictionSchema = z.object({
   customerId: z.string().default("CUST_DEMO"),
   monthlyIncome: z.number().min(0).default(850.0),
