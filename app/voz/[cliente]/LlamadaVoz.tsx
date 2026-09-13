@@ -81,6 +81,7 @@ interface Reconocedor {
   onresult: ((e: EventoReconocimiento) => void) | null;
   onerror: ((e: { error: string }) => void) | null;
   onend: (() => void) | null;
+  onstart?: (() => void) | null;
 }
 
 type ConstructorReconocedor = new () => Reconocedor;
@@ -104,6 +105,21 @@ function elegirVoz(): SpeechSynthesisVoice | null {
   }
   return voces.find((v) => v.lang.toLowerCase().startsWith("es")) ?? null;
 }
+
+/**
+ * Discrimina entre voz humana legítima y ruido ambiental / respiraciones / clics.
+ * Evita que respirar en el micrófono o pequeños ruidos de fondo corten la llamada o envíen basura al modelo,
+ * pero mantiene una alta sensibilidad para palabras reales (incluso cortas como 'sí', 'no', 'hola', 'aló', 'diga').
+ */
+function esVozLegitima(texto: string): boolean {
+  const limpio = texto.trim().toLowerCase();
+  const soloLetras = limpio.replace(/[^a-záéíóúñ0-9]/gi, "");
+  if (soloLetras.length < 2) return false;
+  const ruidos = /^(?:ah?|eh?|uh?|mm+|hm+|oh?|shh?|aj[aá]|\.+)$/i;
+  if (ruidos.test(limpio) || ruidos.test(soloLetras)) return false;
+  return true;
+}
+
 
 const NOMBRES_CLIENTES: Record<string, string> = {
   karla: "Karla Menjívar",
@@ -216,6 +232,8 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   const finLlamadaRef = useRef(false);
   const procesandoRef = useRef(false);
   const inicioHablaAgenteRef = useRef(0);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const procesarTurnoRef = useRef<(texto: string) => Promise<void>>(async () => {});
 
   conversacionIdRef.current = conversacionId;
 
@@ -250,8 +268,11 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
    * Interrumpe la voz del agente de inmediato
    */
   const interrumpirAgente = useCallback(() => {
+    utteranceRef.current = null;
     if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        window.speechSynthesis.cancel();
+      }
     }
     if (audioActualRef.current) {
       audioActualRef.current.pause();
@@ -269,10 +290,14 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       silencioTimerRef.current = null;
     }
     if (reconocedorRef.current) {
-      try {
-        reconocedorRef.current.abort();
-      } catch {}
+      const r = reconocedorRef.current;
       reconocedorRef.current = null;
+      r.onresult = null;
+      r.onerror = null;
+      r.onend = null;
+      try {
+        r.abort();
+      } catch {}
     }
   }, []);
 
@@ -286,98 +311,143 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     textoBufferRef.current = "";
     setTranscripcionEnVivo("");
     setEstadoVoz("escuchando");
+    estadoVozRef.current = "escuchando";
 
     const Constructor = obtenerConstructorReconocedor();
-    if (!Constructor) return;
+    if (!Constructor) {
+      console.warn("SpeechRecognition no soportado en este navegador.");
+      return;
+    }
 
     try {
       const rec = new Constructor();
-      // Idioma estándar latinoamericano de alta precisión en Chrome y Edge
-      const navLang = typeof navigator !== "undefined" ? navigator.language : "";
-      rec.lang = navLang.toLowerCase().startsWith("es") ? navLang : "es-419";
+      // Idioma estándar latinoamericano de máxima precisión y compatibilidad universal
+      rec.lang = "es-419";
       rec.continuous = true;
       rec.interimResults = true;
 
+      rec.onstart = () => {
+        setEstadoVoz("escuchando");
+        estadoVozRef.current = "escuchando";
+      };
+
       rec.onresult = (evento: EventoReconocimiento) => {
-        // Bloqueo estricto si el sistema está procesando o terminó la llamada
         if (procesandoRef.current || finLlamadaRef.current) return;
 
-        // Si el agente estaba hablando, verificar si es un barge-in legítimo
+        // Barge-in: Si el agente estaba hablando, esperar 350ms para evitar eco del altavoz
         if (estadoVozRef.current === "hablando") {
           const tiempoHablando = Date.now() - inicioHablaAgenteRef.current;
-          // Evitar eco de los primeros 500ms del altavoz
-          if (tiempoHablando < 500) return;
+          if (tiempoHablando < 350) return;
         }
 
-        // Reconstrucción completa de la frase acumulada en la sesión actual
         let finales = "";
         let provisional = "";
+        let tieneFinal = false;
+
         for (let i = 0; i < evento.results.length; i++) {
           const res = evento.results[i];
           const trans = res[0]?.transcript ?? "";
-          if (res.isFinal) finales += trans + " ";
-          else provisional += trans;
+          if (res.isFinal) {
+            finales += trans + " ";
+            tieneFinal = true;
+          } else {
+            provisional += trans;
+          }
         }
 
         const detectado = (finales + provisional).trim();
 
-        // Filtrar artefactos mínimos (< 2 caracteres)
-        if (detectado.length >= 2) {
-          // Si el agente hablaba y el cliente empezó a hablar -> Interrumpir al agente de inmediato
+        // Filtrado inteligente: sólo reaccionar si hay voz humana legítima
+        if (esVozLegitima(detectado)) {
+          // Si el agente hablaba -> interrumpir de inmediato
           if (estadoVozRef.current === "hablando") {
             interrumpirAgente();
             setEstadoVoz("escuchando");
+            estadoVozRef.current = "escuchando";
           }
 
           textoBufferRef.current = detectado;
           setTranscripcionEnVivo(detectado);
 
-          // Resetear temporizador de silencio conversacional (950ms)
           if (silencioTimerRef.current) {
             clearTimeout(silencioTimerRef.current);
           }
 
+          // Si el motor ya confirmó el final de la frase (isFinal), 650ms de pausa son ideales.
+          // Si todavía está hablando de forma provisional, damos 1100ms para pausas naturales.
+          const tiempoEspera = tieneFinal ? 650 : 1100;
+
           silencioTimerRef.current = setTimeout(() => {
-            const aEnviar = textoBufferRef.current.trim();
-            if (aEnviar.length >= 2 && !procesandoRef.current) {
+            const aEnviar = (textoBufferRef.current || detectado).trim();
+            if (esVozLegitima(aEnviar) && !procesandoRef.current) {
               detenerReconocedor();
-              void procesarTurno(aEnviar);
+              void procesarTurnoRef.current(aEnviar);
             }
-          }, 950);
+          }, tiempoEspera);
         }
       };
 
       rec.onerror = (e) => {
-        if (e.error !== "no-speech" && e.error !== "aborted") {
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          setErrorAviso("Permiso de micrófono no otorgado. Habilita el acceso al micrófono en tu navegador.");
+        } else if (e.error !== "no-speech" && e.error !== "aborted") {
           console.warn("STT estado:", e.error);
         }
       };
 
       rec.onend = () => {
         reconocedorRef.current = null;
-        // Solo reanudar si todavía debemos estar escuchando y no estamos procesando ni hablando
-        if (
-          !finLlamadaRef.current &&
-          !procesandoRef.current &&
-          estadoVozRef.current === "escuchando"
-        ) {
-          // Re-instanciar limpiamente para que Chromium no falle con InvalidStateError
+        if (finLlamadaRef.current || procesandoRef.current || silenciado) return;
+
+        // Si el usuario ya habló y tenemos texto legítimo acumulado, el fin de reconocimiento
+        // de Chrome marca el final de la elocución. ¡Despachar de inmediato en lugar de borrarlo!
+        const aEnviar = (textoBufferRef.current || "").trim();
+        if (esVozLegitima(aEnviar)) {
+          if (silencioTimerRef.current) {
+            clearTimeout(silencioTimerRef.current);
+            silencioTimerRef.current = null;
+          }
+          textoBufferRef.current = "";
+          detenerReconocedor();
+          void procesarTurnoRef.current(aEnviar);
+          return;
+        }
+
+        // Si no había texto pendiente y debemos seguir escuchando, reactivar limpiamente
+        if (estadoVozRef.current === "escuchando") {
           setTimeout(() => {
             if (
               !finLlamadaRef.current &&
               !procesandoRef.current &&
-              estadoVozRef.current === "escuchando"
+              estadoVozRef.current === "escuchando" &&
+              !silenciado
             ) {
               activarEscuchaUsuario();
             }
-          }, 60);
+          }, 80);
         }
       };
 
-      rec.start();
-      reconocedorRef.current = rec;
+      try {
+        rec.start();
+        reconocedorRef.current = rec;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("already started") || msg.includes("InvalidStateError")) {
+          setTimeout(() => {
+            if (!finLlamadaRef.current && !procesandoRef.current && estadoVozRef.current === "escuchando") {
+              try {
+                rec.start();
+                reconocedorRef.current = rec;
+              } catch {}
+            }
+          }, 120);
+        } else {
+          console.warn("Error al arrancar STT:", err);
+        }
+      }
     } catch (err) {
-      console.error("Error al arrancar STT:", err);
+      console.error("Error al instanciar STT:", err);
     }
   }, [silenciado, detenerReconocedor, interrumpirAgente]);
 
@@ -480,13 +550,15 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     [slug, detenerReconocedor, interrumpirAgente, activarEscuchaUsuario],
   );
 
+  procesarTurnoRef.current = procesarTurno;
+
   /**
    * Permite enviar el texto reconocido de inmediato sin esperar el silencio
    */
   const enviarTurnoInmediato = useCallback(() => {
     if (procesandoRef.current || finLlamadaRef.current) return;
     const aEnviar = (textoBufferRef.current || transcripcionEnVivo).trim();
-    if (aEnviar.length >= 2) {
+    if (esVozLegitima(aEnviar)) {
       if (silencioTimerRef.current) {
         clearTimeout(silencioTimerRef.current);
         silencioTimerRef.current = null;
@@ -544,40 +616,61 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         resolve();
         return;
       }
+
       interrumpirAgente();
+
+      // En Chrome a veces speechSynthesis queda en pausa tras inactividad
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
       const enunciado = new SpeechSynthesisUtterance(texto);
+      utteranceRef.current = enunciado;
       const voz = elegirVoz();
       if (voz) enunciado.voice = voz;
       enunciado.lang = voz?.lang ?? "es-MX";
-      enunciado.rate = 1.02;
+      enunciado.rate = 1.04;
 
-      enunciado.onend = () => {
+      let resuelto = false;
+      const terminar = () => {
+        if (resuelto) return;
+        resuelto = true;
+        utteranceRef.current = null;
+        clearTimeout(watchdog);
         if (!finLlamadaRef.current) {
-          setTimeout(() => activarEscuchaUsuario(), 300);
+          setTimeout(() => activarEscuchaUsuario(), 200);
         }
         resolve();
       };
-      enunciado.onerror = () => {
-        if (!finLlamadaRef.current) activarEscuchaUsuario();
-        resolve();
-      };
+
+      // Watchdog de seguridad contra el bug de Chromium donde onend nunca dispara en textos largos
+      const watchdog = setTimeout(terminar, Math.max(3000, texto.length * 80 + 2000));
+
+      enunciado.onend = terminar;
+      enunciado.onerror = terminar;
 
       window.speechSynthesis.speak(enunciado);
     });
   };
 
   /**
-   * Inicia el análisis de audio con cancelación de eco para el visualizador
+   * Inicia el análisis de audio con cancelación de eco para el visualizador (opcional y no bloqueante)
    */
   const iniciarAnalizadorAudio = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const permisoPromise = navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
       });
+      const timeoutPromise = new Promise<MediaStream>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout mic")), 2500),
+      );
+
+      const stream = await Promise.race([permisoPromise, timeoutPromise]);
       micStreamRef.current = stream;
 
       const AudioCtx =
@@ -607,7 +700,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       };
       loop();
     } catch (err) {
-      console.warn("Visualizador micrófono:", err);
+      console.warn("Visualizador micrófono (no crítico):", err);
     }
   }, []);
 
@@ -623,7 +716,8 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     finLlamadaRef.current = false;
     procesandoRef.current = true;
 
-    await iniciarAnalizadorAudio();
+    // No bloquear la llamada con getUserMedia: iniciar en segundo plano
+    void iniciarAnalizadorAudio();
 
     try {
       const res = await fetch("/api/voz", {
