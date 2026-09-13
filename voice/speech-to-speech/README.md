@@ -2,9 +2,11 @@
 
 Workspace de este enfoque. Ver el contrato compartido y qué NO se duplica en
 [`../README.md`](../README.md) antes de escribir código acá — en particular:
-mismas tools, mismo schema de datos, mismo validador aplicado siempre, y el campo
-`voice_mode: 'speech_to_speech'` en cada turno para que el dashboard compare ambos
-enfoques con datos reales.
+mismas tools, mismo schema de datos, mismo validador aplicado siempre, y
+`canal: 'voz'` + `modo_voz: 's2s'` en cada conversación para que el dashboard compare
+ambos enfoques con datos reales. *(El campo `voice_mode: 'speech_to_speech'` que este
+archivo nombraba antes nunca existió en el esquema: la versión vigente del contrato
+está en `../README.md` y se implementa en `lib/agent/sesion.ts`.)*
 
 ## Alcance de esta carpeta
 
