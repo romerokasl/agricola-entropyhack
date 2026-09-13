@@ -13,6 +13,7 @@
     "demo:reset": "node --env-file=.env.local scripts/reset-demo.mjs",
     "verify:reglas": "tsx scripts/verificar-reglas.ts",
     "verify:dashboard": "tsx scripts/verificar-dashboard.ts",
+    "verify:s2s": "tsx scripts/verificar-s2s.ts",
     "riesgo:demo": "tsx scripts/senal-riesgo.ts",
     "ataque": "tsx scripts/bateria-ataque.ts",
     "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs",
