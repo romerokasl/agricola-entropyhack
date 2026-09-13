@@ -140,11 +140,6 @@ npm run seed:apply   # siembra 8 personajes del demo + 300 clientes sintéticos
 
 | URL | Demostración |
 |---|---|
-<<<<<<< HEAD
-| `/chat/karla` | ⭐ **Caso Estrella (Outbound):** Cobra el 15 y el 30, la cuota vence el 8. El agente detecta el descalce y ofrece mover la fecha al 16 a costo cero. |
-| `/chat/karla?apertura=cliente` | **Caso Inbound:** La clienta inicia la conversación. El agente atiende su duda directa y consulta su perfil sin repetir preguntas innecesarias. |
-| `/chat/marta` | **Caso de Control:** Devuelve `409 NO_CONTACTAR`. Demuestra que el sistema discrimina inteligentemente y no hostiga a clientes al día. |
-=======
 | `/chat/karla` | ⭐ El caso estrella: cobra el 15 y el 30, la cuota vence el 8. El agente detecta la desalineación y ofrece mover la fecha, sin costo. |
 | `/chat/karla?apertura=cliente` | La persona escribe primero. El agente igual se presenta y no vuelve a preguntar lo que ya le dijeron. |
 | `/chat/marta` | **El control.** Devuelve 409: el sistema se niega a abrir conversación con quien no hay por qué contactar. |
