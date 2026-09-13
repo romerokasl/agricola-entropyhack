@@ -41,6 +41,8 @@ interface RespuestaApi {
     turnos: Mensaje[];
     /** El mismo texto, normalizado para pronunciarlo. Se muestra `texto`, se habla esto. */
     hablado?: string;
+    /** Audio sintetizado en el servidor. `null` = que hable el navegador. */
+    audio?: { base64: string; mime: string; latenciaMs: number } | null;
     cerrada?: boolean;
     metricas?: Metricas;
   };
@@ -125,6 +127,8 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   const [cerrada, setCerrada] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [soportado, setSoportado] = useState(true);
+  /** Audio que el navegador no dejó sonar solo, a la espera de un toque. */
+  const [pendiente, setPendiente] = useState<{ base64: string; mime: string } | null>(null);
 
   const iniciado = useRef(false);
   const reconocedor = useRef<Reconocedor | null>(null);
@@ -163,8 +167,39 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     });
   }, []);
 
+  /**
+   * Reproduce el audio que sintetizó el servidor y devuelve el tiempo hasta el primer
+   * sonido. Si el navegador bloquea la reproducción automática (pasa con el saludo
+   * inicial, porque todavía no hubo ningún gesto del usuario), lo deja pendiente para
+   * que se pueda disparar con un toque en vez de perderse.
+   */
+  const reproducir = useCallback((base64: string, mime: string): Promise<number> => {
+    return new Promise((resolve) => {
+      const elemento = new Audio(`data:${mime};base64,${base64}`);
+      const t0 = Date.now();
+      let primerSonido = 0;
+
+      elemento.onplaying = () => {
+        primerSonido = Date.now() - t0;
+      };
+      elemento.onended = () => resolve(primerSonido);
+      elemento.onerror = () => resolve(0);
+
+      void elemento.play().catch(() => {
+        setPendiente({ base64, mime });
+        resolve(0);
+      });
+    });
+  }, []);
+
   const decirTurnoDelAgente = useCallback(
-    async (turnos: Mensaje[], hablado: string | undefined, llmMs: number | null, sttMs: number | null) => {
+    async (
+      turnos: Mensaje[],
+      hablado: string | undefined,
+      audio: { base64: string; mime: string } | null | undefined,
+      llmMs: number | null,
+      sttMs: number | null,
+    ) => {
       setMensajes((prev) => [...prev, ...turnos]);
       const delAgente = turnos.filter((t) => t.rol === "agente");
       if (delAgente.length === 0) return;
@@ -174,11 +209,12 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       const aPronunciar = hablado ?? delAgente.map((t) => t.texto).join(" ");
 
       setEstado("hablando");
-      const ttsMs = await hablar(aPronunciar);
+      // Con proveedor de servidor (Piper) suena ese audio; sin él, la voz del navegador.
+      const ttsMs = audio ? await reproducir(audio.base64, audio.mime) : await hablar(aPronunciar);
       setEtapas({ sttMs, llmMs, ttsMs });
       setEstado("inactivo");
     },
-    [hablar],
+    [hablar, reproducir],
   );
 
   const enviarTexto = useCallback(
@@ -205,6 +241,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         await decirTurnoDelAgente(
           json.data.turnos,
           json.data.hablado,
+          json.data.audio,
           json.data.metricas?.latenciaLlmMs ?? null,
           sttMs,
         );
@@ -241,6 +278,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         await decirTurnoDelAgente(
           json.data.turnos,
           json.data.hablado,
+          json.data.audio,
           json.data.metricas?.latenciaLlmMs ?? null,
           null,
         );
@@ -393,6 +431,21 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
             Este navegador no reconoce voz. Usá Chrome o Edge, o seguí la conversación por
             escrito en <span className="font-semibold">/chat/{slug}</span>.
           </p>
+        )}
+
+        {pendiente && (
+          <div className="flex justify-center">
+            <button
+              onClick={() => {
+                const elemento = new Audio(`data:${pendiente.mime};base64,${pendiente.base64}`);
+                setPendiente(null);
+                void elemento.play().catch(() => undefined);
+              }}
+              className="rounded-button bg-agricola-yellow px-3 py-1.5 text-xs font-semibold text-agricola-dark shadow-subtle"
+            >
+              Tocá para escuchar
+            </button>
+          </div>
         )}
 
         {aviso && (

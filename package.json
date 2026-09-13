@@ -15,7 +15,8 @@
     "verify:dashboard": "tsx scripts/verificar-dashboard.ts",
     "riesgo:demo": "tsx scripts/senal-riesgo.ts",
     "ataque": "tsx scripts/bateria-ataque.ts",
-    "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs"
+    "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs",
+    "voz:instalar": "node scripts/instalar-voz.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

@@ -62,14 +62,54 @@ Reglas de negociación, escalera de opciones, schema de datos, dashboard, canal 
 texto — todo eso vive en el código global (ver contrato en `../README.md`). Esta
 carpeta solo orquesta audio.
 
-## Estructura sugerida (a medida que se implemente)
+## Estructura
 
 ```
 pipeline/
 ├── README.md
 ├── docs/
-│   └── critical-analysis-gemini-proposal.md
-├── stt.ts / stt.py           (adaptador del proveedor de STT)
-├── tts.ts / tts.py           (adaptador del proveedor de TTS)
-└── orchestrator.ts / .py     (STT → LLM (tools compartidas) → validador → TTS)
+│   ├── critical-analysis-gemini-proposal.md
+│   ├── model-selection.md
+│   └── plan-implementacion.md      (orden de construcción y qué queda fuera)
+├── normalizador.ts                 ✅ texto escrito → texto pronunciable
+├── tts.ts                          ✅ adaptador de TTS (Piper local)
+├── stt.ts                          ⏳ adaptador de STT
+└── bin/                            (gitignored — se baja con npm run voz:instalar)
 ```
+
+La orquestación no vive acá: es `app/api/voz/route.ts`, un envoltorio delgado sobre
+`lib/agent/sesion.ts`.
+
+## Instalación del motor de voz local
+
+Los binarios y modelos pesan ~80 MB y no se versionan:
+
+```bash
+npm run voz:instalar
+```
+
+Baja Piper y la voz `es_MX-ald-medium` a `bin/`. Es idempotente. Después, en
+`.env.local`:
+
+```
+TTS_PROVIDER=piper      # sin esta variable, habla el navegador
+```
+
+Medido en la laptop de desarrollo: factor de tiempo real **0.059** — 17 s de audio
+sintetizados en 1.5 s, sin cuenta, sin tarjeta y sin límite de caracteres.
+
+## El normalizador, y por qué el orden importa
+
+```
+validador → se persiste el texto ESCRITO → normalizador → TTS
+```
+
+`normalizador.ts` convierte `"$145.00"` en `"ciento cuarenta y cinco dólares"` y
+`"el 16"` en `"el dieciséis"`. Importa porque el mensaje de cierre **siempre** menciona
+monto y fecha, así que aparece en el turno más importante de cada conversación.
+
+Es una ventaja estructural sobre speech-to-speech, no un detalle cosmético: existe un
+paso de texto intermedio donde intervenir antes de sintetizar, que un modelo
+audio-to-audio no tiene. La transcripción que queda en `turnos` y que ve el jurado es la
+**escrita**; la hablada viaja aparte en la respuesta de la API y nunca cambia contenido
+que el validador ya aprobó.
