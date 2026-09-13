@@ -2,13 +2,22 @@
 // El management API usa un access token diferente del service_role key
 // Alternativa: crear función RPC que permita insertar sin RLS
 
-const SUPABASE_URL = 'https://zepewgqjqbcnfsmbqsad.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InplcGV3Z3FqcWJjbmZzbWJxc2FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MDg3NjYsImV4cCI6MjEwNDI4NDc2Nn0.AhFEDseo5jLU7MUeQ-wcmX-JvbBDKYw2wHtWWidMc74';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  console.error('Corré: node --env-file=.env.local scripts/check-supabase.js');
+  process.exit(1);
+}
+
+// El ref del proyecto es el subdominio de la URL.
+const PROJECT_REF = new URL(SUPABASE_URL).hostname.split('.')[0];
 
 async function main() {
   // 1. Try the Supabase Management API endpoint to run SQL
   console.log('=== Intento 1: Management API ===');
-  const mgmtResp = await fetch('https://api.supabase.com/v1/projects/zepewgqjqbcnfsmbqsad/database/query', {
+  const mgmtResp = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

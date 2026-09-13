@@ -2,8 +2,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const SUPABASE_URL = 'https://zepewgqjqbcnfsmbqsad.supabase.co';
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InplcGV3Z3FqcWJjbmZzbWJxc2FkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODcwODc2NiwiZXhwIjoyMTA0Mjg0NzY2fQ.a-p3p985vo_EL-qgsUcsq7ghFW0fEiJ6_ZeEKtEdZR8';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  console.error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
+  console.error('Corré: node --env-file=.env.local scripts/seed-supabase.js');
+  process.exit(1);
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
