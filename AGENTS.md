@@ -47,7 +47,9 @@ agricola-entropyhack/
 │   ├── migrations/             # Migraciones SQL versionadas (4 tablas activas)
 │   └── seed.sql                # Dataset determinista (8 héroes + 300 sintéticos)
 ├── scripts/
-│   ├── verificar-reglas.ts     # Suite de 23 verificaciones de reglas de negocio
+│   ├── verificar-reglas.ts     # 53 verificaciones de reglas de negocio (npm run verify:reglas)
+│   ├── verificar-dashboard.ts  # 23 verificaciones del cálculo del dashboard
+│   ├── verificar-s2s.ts        # 26 verificaciones del canal speech-to-speech
 │   ├── bateria-ataque.ts       # Batería de 20 ataques contra el agente
 │   └── generate-seed.mjs       # Generador del dataset determinista
 ├── docs/                       # Contexto de negocio, normativas y diseño

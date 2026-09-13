@@ -46,9 +46,9 @@ lo tapaba con `npm ci || npm install`, que en la práctica instalaba otra cosa d
 | JWT `anon` y ref del proyecto hardcodeados en `scripts/check-supabase.js` y `scripts/run-seed-remote.js` | ✅ Quitados. Los tres scripts leen variables de entorno y fallan con un mensaje claro si faltan (verificado) |
 | Otros secretos (JWT, `AIza…`, `sk-…`, `ghp_…`, llaves privadas PEM, `postgres://user:pass@`, AWS) en 207 archivos versionados y no ignorados | ✅ Ninguno |
 | `SUPABASE_SERVICE_ROLE_KEY` o credenciales de Google en componentes `'use client'` | ✅ Ninguno |
-| Rutas de `app/api` que devuelven `e.message` crudo en los 500 (`chat`, `dashboard`, `predict`, `voz`, `voz-s2s`, `monitoring`) | ⚠️ **Pendiente.** Pueden filtrar textos internos de Supabase al cliente. Se recomienda loguear en el servidor y responder un mensaje genérico. No se tocó por falta de tiempo para volver a probarlo |
+| Rutas de `app/api` que devolvían `e.message` crudo en los 500 (`chat`, `dashboard`, `dashboard/conversaciones/[id]`, `predict`, `voz`, `voz-s2s`, `monitoring`) | ✅ Corregido: el error se loguea en el servidor con `console.error` y el cliente recibe un mensaje genérico. Los errores esperados (`ErrorSesion`, `ErrorS2S`) conservan su mensaje. Después del cambio pasan type-check, lint, build y los tres verify |
 | `POST /api/monitoring` no valida el body con Zod (`scenario`, `count` sin límite) | ⚠️ Pendiente |
-| `.env.example` no lista `GEMINI_API_KEY`, `GEMINI_MODEL`, `DATABASE_URL`, `DEMO_MODE`, `OPENAI_API_KEY`, `OPENAI_REALTIME_*`, `PIPER_BIN`, `PIPER_VOZ`, `WHISPER_BIN`, `WHISPER_MODELO`, `BASE_URL`, `CANAL` | ⚠️ Pendiente |
+| `.env.example` no listaba `GEMINI_API_KEY`, `GEMINI_MODEL`, `DATABASE_URL`, `DEMO_MODE`, `OPENAI_*`, `PIPER_*`, `WHISPER_*` | ✅ Agregadas. `BASE_URL` y `CANAL` son solo de `npm run ataque` y no van al `.env` |
 
 ## 3. Qué se borró o movió
 
@@ -97,3 +97,5 @@ En orden, todos en `Audit` y **sin push**:
 4. `docs(readme): resolver el conflicto de merge en la tabla de rutas`
 5. `chore(ci): usar solo npm ci y correr las verificaciones deterministas`
 6. `docs(auditoria): registrar la auditoria final del repositorio`
+7. `fix(api): no devolver mensajes de error internos en las respuestas 500`
+8. `docs(config): completar .env.example y corregir conteos en AGENTS.md`
