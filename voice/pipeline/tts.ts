@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
+import textToSpeech from "@google-cloud/text-to-speech";
 
 /**
  * Etapa TTS del pipeline: texto validado y normalizado → audio.
@@ -181,6 +182,73 @@ function crearEdgeTtsProvider(): TtsProvider {
 }
 
 /**
+ * Proveedor Google Cloud Text-to-Speech con voces WaveNet.
+ * Requiere GOOGLE_APPLICATION_CREDENTIALS o GOOGLE_CLOUD_API_KEY en .env.local
+ *
+ * VOCES WAVENET DISPONIBLES (es-SV / es-MX):
+ * - es-SV-Standard-A: Masculina, acento salvadoreño natural ⭐⭐⭐⭐⭐
+ * - es-SV-Neural2-A: Masculina, WaveNet ultra-natural (MOS 4.1/5) ⭐⭐⭐⭐⭐⭐
+ * - es-MX-Neural2-B: Masculina, WaveNet mexicana natural
+ *
+ * WaveNet vs Edge: MOS 4.1/5 (Google) vs 3.8/5 (Edge) — claramente superior en naturalidad.
+ */
+function crearGoogleCloudTtsProvider(): TtsProvider {
+  const voz = process.env.GOOGLE_CLOUD_VOZ ?? "es-SV-Neural2-A";
+  const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+
+  if (!apiKey && !projectId) {
+    throw new Error(
+      "Google Cloud TTS requiere GOOGLE_CLOUD_API_KEY o GOOGLE_APPLICATION_CREDENTIALS en .env.local",
+    );
+  }
+
+  return {
+    nombre: `google-cloud/${voz}`,
+
+    async sintetizar(texto: string): Promise<ResultadoTts> {
+      const inicio = Date.now();
+
+      try {
+        const client = new textToSpeech.TextToSpeechClient({
+          apiKey: apiKey,
+          projectId: projectId,
+        });
+
+        const request = {
+          input: { text: texto },
+          voice: {
+            languageCode: "es-SV",
+            name: voz,
+          },
+          audioConfig: {
+            audioEncoding: 3, // MP3 = 3 en Google Cloud
+            sampleRateHertz: 24000,
+          },
+        };
+
+        const [response] = await client.synthesizeSpeech(request);
+        const audioContent = response.audioContent;
+
+        if (!audioContent) {
+          throw new Error("Google Cloud TTS no devolvió contenido de audio");
+        }
+
+        return {
+          audio: Buffer.from(audioContent as Uint8Array),
+          mime: "audio/mp3",
+          latenciaMs: Date.now() - inicio,
+        };
+      } catch (error) {
+        throw new Error(
+          `Google Cloud TTS error: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  };
+}
+
+/**
  * `null` significa "que hable el navegador" — no es un error ni un proveedor faltante.
  * Si se especifica "edge" o "neural", se genera audio neuronal ultranatural en el backend.
  */
@@ -189,7 +257,9 @@ export function obtenerTtsProvider(): TtsProvider | null {
   if (nombre === "navegador") return null;
   if (nombre === "edge" || nombre === "neural" || nombre === "msedge") return crearEdgeTtsProvider();
   if (nombre === "piper") return crearPiperProvider();
+  if (nombre === "google" || nombre === "google-cloud" || nombre === "wavenet")
+    return crearGoogleCloudTtsProvider();
   throw new Error(
-    `TTS_PROVIDER="${nombre}" no está implementado. Valores válidos: "edge" (Neuronal El Salvador/México), "piper" (local) y "navegador" (SpeechSynthesis del cliente).`,
+    `TTS_PROVIDER="${nombre}" no está implementado. Valores válidos: "edge" (Neuronal El Salvador/México), "google" (WaveNet ultra-natural), "piper" (local) y "navegador" (SpeechSynthesis del cliente).`,
   );
 }
