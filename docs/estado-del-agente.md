@@ -102,13 +102,102 @@ forma determinista (mismo seed → mismo archivo byte a byte). Ver
 
 ---
 
+## El caso de voz (pipeline STT → LLM → validador → TTS)
+
+Verificado de punta a punta contra Supabase, el microservicio de ML y los motores de voz
+reales. Conversación hablada completa de Karla, cerrada con acuerdo:
+
+```
+CONVERSACION: canal=voz · modo_voz=pipeline · cerrada_con_acuerdo
+              motivo_contacto=desalineacion_quincena · riesgo_fuente=modelo_vivo
+ACUERDO     : escalon 2 · mover_fecha · $145.00 · 2026-09-16
+ETAPAS      : turno 0 ->             llm 13925 | val 0 | tts 1127
+              turno 2 -> stt 1550  | llm 31520 | val 0 | tts 1339
+              turno 4 -> stt 1328  | llm 17978 | val 1 | tts 1078
+```
+
+Todo local y sin cuenta: **whisper.cpp** transcribe y **Piper** sintetiza
+(`npm run voz:instalar`, ~230 MB a `voice/pipeline/bin/`, gitignoreado). El LLM sigue
+siendo intercambiable por variable de entorno.
+
+**El validador cuesta 0–1 ms.** Es el número para el Q&A: el guardrail determinista —lo
+que ningún speech-to-speech puede garantizar— no se paga en latencia.
+
+### Tres fallas que solo aparecieron al correrlo
+
+Ninguna se veía en las verificaciones estáticas, y las tres estaban en el turno de
+cierre o cerca:
+
+1. **Los modelos chicos tipan mal el JSON de las tools.** `qwen2.5:3b` manda
+   `monto: null` en vez de omitir el campo; `llama3.1` manda `{"monto":"145",
+   "diaAcordado":"16"}` con los números como texto. Zod los rechazaba enteros y el
+   acuerdo no se registraba nunca. Hoy se convierten antes de validar, y los rangos
+   siguen corriendo después.
+2. **El agente narraba las fallas internas.** Al fallar la herramienta le dijo a la
+   persona *"hubo un error al registrar el acuerdo"*. El payload de error ahora lleva la
+   instrucción explícita de no mencionarlo. Los errores de tool se loguean en el
+   servidor con los argumentos recibidos — sin eso no había cómo diagnosticar.
+3. **Los ataques por voz cortaban a la persona.** El reconocedor estaba en
+   `continuous = false`, con lo que la Web Speech API cierra el turno en la primera
+   pausa en vez de esperar a que se suelte el botón.
+
+---
+
+## Para la próxima sesión
+
+### La tabla de la batería es insumo, no veredicto
+
+`scripts/bateria-ataque.ts` solo marca **falla automática** en tres casos: apareció algo
+prohibido por regex, faltó algo requerido, o cerró un acuerdo a partir del mensaje
+tramposo. Todo lo demás sale como **"revisar"**.
+
+Eso significa que un resultado de "20/20 sin violaciones automáticas" **no es un
+aprobado**: quedan por juzgar a mano el tono y si la alternativa ofrecida era válida y
+del escalón correcto. Hay que leer la tabla entera antes de mostrarla en el pitch.
+
+### Sobre qué modelo correr la batería
+
+La corrida hecha es con `llama3.1` local. **El demo va a correr con Gemini**, y los
+modelos se comportan distinto: medido, `llama3.1` sin ejemplos en el prompt no pasaba el
+validador ni una vez. La batería hay que repetirla sobre el modelo que se vaya a usar en
+vivo — pero son ~40 llamadas, o sea el doble de la cuota diaria de un modelo del tier
+gratuito. Decidir eso antes de ensayar.
+
+### Los ejemplos de brevedad solo van a Ollama
+
+`EJEMPLOS_BREVEDAD` en `lib/agent/prompt.ts` se inyecta **solo** cuando el proveedor es
+Ollama (`orchestrator.ts` lo decide). Medido con `npm run evaluar:brevedad`:
+
+| Modelo | Sin ejemplos | Con ejemplos |
+|---|---|---|
+| `llama3.1:8b` | 0/12 · 5.2 y 4.3 frases | **11/12** · 2.8 y 3.0 frases |
+| `qwen2.5:3b` | 0/12 · 5.3 frases | 0/12 · 4.1 frases |
+
+En 8B resuelven el problema; en 3B ayudan pero no cruzan el umbral de 3 frases. Si se
+cambia de modelo local, **volver a correr esa medición** antes de confiar.
+
+### Deuda conocida
+
+- **Voseo inconsistente.** Con los tres modelos aparecen deslices al tuteo
+  (*"¿Quieres que te envíe…?"*). El validador no lo chequea y vale dentro de los 20
+  puntos de calidad conversacional.
+- **Recortar en vez de descartar.** Cuando el validador rechaza por `demasiadas_frases`
+  se tira una respuesta que era correcta y se sirve la genérica. Recortar a 3 frases y
+  revalidar recuperaría la mayoría de esos turnos sin debilitar nada, porque el texto
+  recortado pasaría el validador completo. Evaluado y no implementado.
+- **La latencia del LLM domina todo.** Con `llama3.1` un turno hablado son ~70 s porque
+  el modelo no cabe en los 4 GB de VRAM de la laptop. STT y TTS juntos son ~3 s.
+
+---
+
 ## Qué NO está hecho todavía
 
 | Falta | Nota |
 |---|---|
-| **Batería de 20 ataques ejecutada** | El arnés está listo (`npm run ataque`) y escribe la tabla para el README. No se corrió por cuota. **Es lo siguiente más importante**: el jurado anunció que va a intentar romper el agente. |
+| **Batería de 20 ataques ejecutada** | ⚠️ **Corrección: no era la cuota.** El arnés no compilaba — usaba `await` de nivel superior y `tsx` compila a CommonJS, que no lo admite, así que `npm run ataque` fallaba antes del primer ataque. Ya está arreglado y corre (`CANAL=voz npm run ataque` para el canal hablado). Falta la corrida completa y revisar su tabla a mano. **Sigue siendo lo más importante**: el jurado anunció que va a intentar romper el agente. |
 | **Dashboard** | 10 puntos. Los datos que necesita ya se persisten: latencia, tokens, `validador_ok`, acuerdos por tipo y —desde la migración `20260913120000`— la señal de riesgo y el motivo de contacto por conversación. Es sobre todo lectura y presentación. |
-| **Voz** | `voice/pipeline/` y `voice/speech-to-speech/` siguen vacíos de código de audio. Lo que ya NO falta: la capa compartida que ambos consumen (`lib/agent/sesion.ts`), la señal de riesgo y la guía de redacción para voz en el prompt. Falta STT, TTS y la latencia por etapa. |
+| **Voz — pipeline** | ✅ Construido y verificado de punta a punta. Ver la sección "El caso de voz" abajo. Falta la revisión humana de la batería por voz. |
+| **Voz — speech-to-speech** | `voice/speech-to-speech/` sigue vacío de código. Consumiría la misma `lib/agent/sesion.ts` pasando `modoVoz: "s2s"`. |
 | **Fallback a Groq** | Decidido desde el principio, sin construir. Dejó de ser opcional (ver la sección de cuota). |
 | **Resumen de historial** | No implementado a propósito: se dispara pasados 10 turnos y el flujo de Karla tiene 5. Antes de eso es costo sin beneficio. |
 
