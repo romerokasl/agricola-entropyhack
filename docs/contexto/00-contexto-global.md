@@ -359,6 +359,7 @@ decisión de diseño previa.
 | `00-contexto-global.md` | Este documento |
 | `01-reglas-del-agente.md` | System prompt, reglas de negociación, guardrails, batería de ataque |
 | `02-decisiones-y-plan.md` | Las 5 decisiones a defender, los 7 puntos del doc del equipo, orden de construcción, métricas del dashboard |
+| `03-seleccion-modelo-llm.md` | Decisión de LLM (compartida con `voice/pipeline/docs/model-selection.md`): comparación paga y cadena de fallback a costo cero |
 
 ---
 
