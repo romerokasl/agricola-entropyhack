@@ -2,7 +2,7 @@
 
 > **⚠️ Decisión de alcance del equipo:** este proyecto solo trabaja con los grupos **Consumo y Vivienda** de NCB-022. **Empresa queda fuera de alcance** (otra metodología, "otro tipo de escalabilidad"). La Parte 4 de abajo describe el catálogo de Empresa solo como referencia informativa — no hace falta implementarlo.
 >
-> **Este documento es el análisis y el "por qué".** Para la referencia operativa que debe consultar el agente (texto completo de la norma + reglas de cada producto en formato de chequeo), ver [`04-ncb022-norma-completa.md`](04-ncb022-norma-completa.md).
+> **Este documento es el análisis y el "por qué".** Para la referencia operativa que debe consultar el agente (texto completo de la norma + reglas de cada producto en formato de chequeo), ver [`06-ncb022-norma-completa.md`](06-ncb022-norma-completa.md).
 
 > **Para qué sirve este documento:** el agente va a ofrecer productos reales y va a hablar de "categoría de riesgo" y "reservas" en el pitch. Si cualquiera de los dos datos está mal — le ofrece Extrafinanciamiento a alguien que no califica, o dice que evitar la mora "le ahorra plata al banco" sin poder decir cuánto — es exactamente el tipo de error que el ingeniero de IA del banco (Alejandro) va a cachar en una pregunta. Este documento junta dos investigaciones para que `consultarOpcionesValidas(clienteId)` y el dashboard tengan una base real, no inventada:
 >
