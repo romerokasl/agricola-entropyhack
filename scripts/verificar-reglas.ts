@@ -30,6 +30,7 @@ import { derivarFeatures } from "../lib/riesgo/features";
 import { puntuarReglas } from "../lib/riesgo/reglas";
 import { consultarModelo } from "../lib/riesgo/servicio";
 import type { SenalRiesgo } from "../lib/riesgo/types";
+import { normalizarParaVoz } from "../voice/pipeline/normalizador";
 
 /** Fecha fija: si dependiera de "hoy", la verificación fallaría según el día. */
 const HOY = new Date(2026, 8, 12); // 12 de septiembre de 2026
@@ -373,6 +374,45 @@ const pruebas: Array<[string, () => void | Promise<void>]> = [
       assert.ok(enTexto.includes(opcion.id), `falta ${opcion.id} en texto`);
       assert.ok(enVoz.includes(opcion.id), `falta ${opcion.id} en voz`);
     }
+  }],
+
+  // --- Normalizador de voz --------------------------------------------------
+  ["El monto del acuerdo se pronuncia completo", () => {
+    assert.equal(normalizarParaVoz("$145.00"), "ciento cuarenta y cinco dólares");
+    assert.equal(normalizarParaVoz("$72.50"), "setenta y dos dólares con cincuenta centavos");
+  }],
+  ["Un dólar va en singular y apocopado", () => {
+    assert.equal(normalizarParaVoz("$1.00"), "un dólar");
+    assert.equal(normalizarParaVoz("$21.00"), "veintiún dólares");
+    assert.equal(normalizarParaVoz("$31.00"), "treinta y un dólares");
+  }],
+  ["Un monto sin parte entera se lee como centavos", () => {
+    assert.equal(normalizarParaVoz("$0.50"), "cincuenta centavos");
+  }],
+  ["Los miles con coma no se parten", () => {
+    assert.equal(normalizarParaVoz("$1,240.00"), "mil doscientos cuarenta dólares");
+  }],
+  ["El día del acuerdo se pronuncia, y sin apócope", () => {
+    // "el día veintiuno", no "el día veintiún": la apócope es solo delante del monto.
+    assert.equal(normalizarParaVoz("el 16"), "el dieciséis");
+    assert.equal(normalizarParaVoz("el 21"), "el veintiuno");
+    assert.equal(normalizarParaVoz("el 8"), "el ocho");
+  }],
+  ["El mensaje de cierre completo queda pronunciable", () => {
+    const escrito = "Listo, Karla. Tu cuota de $145.00 vencerá el 16 de cada mes.";
+    assert.equal(
+      normalizarParaVoz(escrito),
+      "Listo, Karla. Tu cuota de ciento cuarenta y cinco dólares vencerá el dieciséis de cada mes.",
+    );
+  }],
+  ["No queda ningún dígito sin pronunciar", () => {
+    const escrito = "Son $145.00 el 16, con 0% de interés y tu DUI a mano.";
+    assert.ok(!/\d/.test(normalizarParaVoz(escrito)), "quedaron dígitos sin convertir");
+  }],
+  ["El normalizador no inventa ni borra contenido", () => {
+    // Es fonético: si no hay números, el texto tiene que salir intacto.
+    const escrito = "Cuidemos tu récord crediticio con opciones a tu medida.";
+    assert.equal(normalizarParaVoz(escrito), escrito);
   }],
 ];
 

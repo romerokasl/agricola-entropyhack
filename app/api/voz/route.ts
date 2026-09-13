@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { continuarConversacion, ErrorSesion, iniciarConversacion } from "@/lib/agent/sesion";
+import { normalizarParaVoz } from "@/voice/pipeline/normalizador";
 
 /**
  * El canal de voz, enfoque pipeline. Es el mismo envoltorio delgado que `/api/chat`,
@@ -44,6 +45,20 @@ function error(code: string, message: string, status: number) {
   return NextResponse.json({ success: false, error: { code, message } }, { status });
 }
 
+/**
+ * Lo que se pronuncia. `turnos` lleva el texto escrito — que es lo que se persiste y lo
+ * que el jurado lee como transcripción — y `hablado` la versión fonética.
+ * Corre después del validador: no puede cambiar contenido, solo cómo se lee.
+ */
+function paraHablar(turnos: readonly { rol: string; texto: string }[]): string {
+  return normalizarParaVoz(
+    turnos
+      .filter((t) => t.rol === "agente")
+      .map((t) => t.texto)
+      .join(" "),
+  );
+}
+
 export async function POST(req: NextRequest) {
   const crudo = await req.json().catch(() => ({}));
   const parsed = EsquemaPeticion.safeParse(crudo);
@@ -77,6 +92,7 @@ export async function POST(req: NextRequest) {
           conversacionId: inicio.conversacionId,
           cliente: { nombre: inicio.cliente.nombre },
           turnos: inicio.turnos,
+          hablado: paraHablar(inicio.turnos),
           ...(inicio.turno
             ? {
                 metricas: {
@@ -98,6 +114,7 @@ export async function POST(req: NextRequest) {
       data: {
         conversacionId: respuesta.conversacionId,
         turnos: [{ rol: "agente", texto: respuesta.turno.texto }],
+        hablado: normalizarParaVoz(respuesta.turno.texto),
         cerrada: respuesta.cerrada,
         metricas: {
           // `latenciaMs` es el campo común con S2S. El desglose por etapa es el extra

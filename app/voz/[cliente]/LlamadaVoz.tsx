@@ -39,6 +39,8 @@ interface RespuestaApi {
     conversacionId: string;
     cliente?: { nombre: string };
     turnos: Mensaje[];
+    /** El mismo texto, normalizado para pronunciarlo. Se muestra `texto`, se habla esto. */
+    hablado?: string;
     cerrada?: boolean;
     metricas?: Metricas;
   };
@@ -162,13 +164,17 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   }, []);
 
   const decirTurnoDelAgente = useCallback(
-    async (turnos: Mensaje[], llmMs: number | null, sttMs: number | null) => {
+    async (turnos: Mensaje[], hablado: string | undefined, llmMs: number | null, sttMs: number | null) => {
       setMensajes((prev) => [...prev, ...turnos]);
       const delAgente = turnos.filter((t) => t.rol === "agente");
       if (delAgente.length === 0) return;
 
+      // Se muestra el texto escrito y se pronuncia el normalizado. Si el servidor no
+      // mandó versión hablada, se lee el escrito: peor pronunciado, pero nunca mudo.
+      const aPronunciar = hablado ?? delAgente.map((t) => t.texto).join(" ");
+
       setEstado("hablando");
-      const ttsMs = await hablar(delAgente.map((t) => t.texto).join(" "));
+      const ttsMs = await hablar(aPronunciar);
       setEtapas({ sttMs, llmMs, ttsMs });
       setEstado("inactivo");
     },
@@ -196,7 +202,12 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
           return;
         }
         if (json.data.cerrada) setCerrada(true);
-        await decirTurnoDelAgente(json.data.turnos, json.data.metricas?.latenciaLlmMs ?? null, sttMs);
+        await decirTurnoDelAgente(
+          json.data.turnos,
+          json.data.hablado,
+          json.data.metricas?.latenciaLlmMs ?? null,
+          sttMs,
+        );
       } catch {
         setAviso("No se pudo conectar con el servicio.");
         setEstado("inactivo");
@@ -227,7 +238,12 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         }
         setConversacionId(json.data.conversacionId);
         conversacionIdRef.current = json.data.conversacionId;
-        await decirTurnoDelAgente(json.data.turnos, json.data.metricas?.latenciaLlmMs ?? null, null);
+        await decirTurnoDelAgente(
+          json.data.turnos,
+          json.data.hablado,
+          json.data.metricas?.latenciaLlmMs ?? null,
+          null,
+        );
       } catch {
         setAviso("No se pudo conectar con el servicio.");
         setEstado("inactivo");
