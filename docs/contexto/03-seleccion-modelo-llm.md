@@ -79,10 +79,10 @@ línea de `.env.local`).
 
 Dos reglas que salen de eso:
 
-1. **Los ensayos del pipeline de voz nunca corren con Ollama.** Medido en la laptop de
-   desarrollo: 94 s para un turno con prompt de juguete (`llama3.1:8b` no cabe en los
-   4 GB de VRAM del RTX 3050 y el 58 % corre en CPU). Tolerable para iterar texto,
-   inviable para voz. Detalle en
+1. **El modelo local tiene que caber completo en VRAM, no en RAM.** Medido en la laptop
+   de desarrollo: `llama3.1:8b` (5.6 GB) contra una RTX 3050 de 4 GB reparte 58 % a CPU y
+   tarda **94 s por turno**; `qwen2.5:3b` corre 100 % en GPU y tarda **756 ms** — 124×.
+   Verificalo con `ollama ps`: la columna PROCESSOR debe decir `100% GPU`. Detalle en
    [`voice/pipeline/docs/plan-implementacion.md`](../../voice/pipeline/docs/plan-implementacion.md) §2.
 2. **Lo que se valide contra Ollama se revalida contra el modelo del demo.** En esa misma
    medición el modelo respondió con tuteo en vez de voseo y ofreció una opción que no

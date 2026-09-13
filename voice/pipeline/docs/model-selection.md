@@ -56,9 +56,11 @@ del Q&A en `docs/contexto/03-seleccion-modelo-llm.md`.
 poder iterar sin la cuota de 20 peticiones/día/modelo de Gemini. El demo sigue siendo
 Gemini Flash (`LLM_PROVIDER=gemini`).
 
-**Para esta carpeta la consecuencia es una regla dura: los ensayos de voz nunca corren
-con Ollama.** Medido: 94 s por turno con prompt de juguete en la laptop de desarrollo
-(el modelo de 5.6 GB no cabe en 4 GB de VRAM y el 58 % cae en CPU). Ver
+**Para esta carpeta la consecuencia es una regla en dos niveles:** probar el cableado y la
+latencia del pipeline con Ollama está bien (`qwen2.5:3b`, 756 ms por turno medidos);
+**ensayar calidad conversacional o grabar tomas, con Gemini**. Con `llama3.1:8b` el mismo
+turno tardaba 94 s porque no cabía en los 4 GB de VRAM — el modelo tiene que caber
+completo en la GPU (`ollama ps` debe decir `100% GPU`). Ver
 [`plan-implementacion.md`](plan-implementacion.md) §2.
 
 ⚠️ **Correr la batería de 20 ataques (`01-reglas-del-agente.md` §4) sobre el modelo

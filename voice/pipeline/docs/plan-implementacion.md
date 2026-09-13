@@ -54,15 +54,28 @@ esos 94 s**.
 - **No bloquea el canal de texto.** Decisión ya tomada por el equipo: Ollama es banco de
   pruebas sin cuota; la demo corre en Gemini Flash / Groq, que están verificados y son
   rápidos. La lentitud se acepta a cambio de iterar sin quemar las 20 peticiones diarias.
-- **Sí bloquea los ensayos de voz.** Un turno de voz a 94 s+ no se puede ensayar ni
-  demostrar. **Regla operativa: todo ensayo del pipeline de voz corre con
-  `LLM_PROVIDER=gemini` (o Groq cuando exista el fallback), nunca con Ollama.** Como el
-  proveedor se elige por variable de entorno, esto no cuesta nada — es literalmente
-  cambiar una línea de `.env.local` antes de ensayar.
-- **Opcional, si se quiere que Ollama también sirva para voz:** un modelo de 3B entra
-  completo en 4 GB de VRAM y debería bajar el turno a segundos.
-  `ollama pull qwen2.5:3b` (o `llama3.2:3b`) y `OLLAMA_MODEL=qwen2.5:3b`. Ambos soportan
-  tool-calling, que es requisito no negociable acá. **Medir antes de confiar.**
+### Resuelto el mismo día: `qwen2.5:3b`
+
+El modelo de 3B entra completo en la VRAM disponible. Medido, mismo prompt, misma laptop:
+
+| | `llama3.1:8b` | `qwen2.5:3b` |
+|---|---|---|
+| `ollama ps` → PROCESSOR | 58%/42% CPU/GPU | **100% GPU** |
+| Turno en caliente | 94.112 ms | **756 ms** (~124× más rápido) |
+| Generación | ~0.6 tok/s | **72.6 tok/s** |
+| Tool-calling con el schema real | — | ✅ `{tipo: "mover_fecha", diaAcordado: 16}` en 948 ms |
+
+**Regla operativa revisada, en dos niveles:**
+
+1. **Probar el pipeline (cableado, latencia por etapa, persistencia): Ollama sirve.**
+   756 ms de LLM deja un presupuesto de turno razonable para voz.
+2. **Ensayar calidad conversacional o grabar tomas: `LLM_PROVIDER=gemini`.** La velocidad
+   se arregló; la calidad no (ver abajo). Lo que un 3B diga no predice lo que dirá el
+   modelo del demo, y la calidad conversacional vale 20 puntos.
+
+> **Criterio general, no solo para esta laptop:** el modelo tiene que caber **completo en
+> VRAM**, no en RAM. `ollama ps` debe decir `100% GPU`. Si dice algo como `58%/42%`, el
+> modelo es muy grande para esa GPU y el turno se degrada dos órdenes de magnitud.
 
 ### Nota de calidad, no solo de velocidad
 
@@ -73,10 +86,26 @@ La respuesta que devolvió `llama3.1:8b` en esa medición:
 
 Dos fallas en una sola respuesta: **tuteo en vez de voseo** (*podés / querés* — y el
 voseo pesa dentro de los 20 puntos de calidad conversacional) y una opción que **no está
-en la escalera** (partir la cuota en dos pagos). Es exactamente lo que advierten los dos
-docs de selección de modelo sobre los modelos chicos. Refuerza la regla que ya está
-escrita: **la batería de 20 ataques se corre sobre el modelo que de verdad se va a usar
-en el demo**, no sobre el que se usó para iterar.
+en la escalera** (partir la cuota en dos pagos).
+
+`qwen2.5:3b` es más rápido pero no mejor en esto — en su medición se le escapó
+**portugués** (*"para **não** comprometer"*) y dio un consejo genérico sin ofrecer ningún
+escalón. Es exactamente lo que advierten los dos docs de selección de modelo sobre los
+modelos chicos, y refuerza la regla ya escrita: **la batería de 20 ataques se corre sobre
+el modelo que de verdad se va a usar en el demo**, no sobre el que se usó para iterar.
+
+**Contención estructural (lo que hace que esto sea tolerable):** `lib/agent/tools.ts` ya
+está diseñado para que el modelo no pueda equivocar los datos duros — *"el modelo manda
+lo MÍNIMO y el código deriva el resto"*. No manda el escalón (se deriva de `tipo`), no
+manda la fecha (manda un día y el código la calcula), y `tipo` se valida contra
+`opcionesValidasPara(cliente)`. Un modelo chico puede redactar mal; **no puede inventar
+un escalón, una fecha ni una opción inexistente.**
+
+**Bug real encontrado con este cambio (ya corregido):** `qwen2.5:3b` manda `monto: null`
+en vez de omitir el campo, y el schema Zod usaba `.optional()`, que acepta `undefined`
+pero rechaza `null` → `registrarAcuerdo` fallaba **justo en el turno de cierre**. Ahora
+usa `.nullish()`. Es la clase de falla que solo aparece corriéndolo, como las seis de
+[`estado-del-agente.md`](../../../docs/estado-del-agente.md).
 
 ---
 
