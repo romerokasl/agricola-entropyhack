@@ -294,10 +294,137 @@ function crearGeminiProvider(): LlmProvider {
   };
 }
 
+interface OllamaToolCall {
+  function: { name: string; arguments: Record<string, unknown> };
+}
+
+interface OllamaMensaje {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_calls?: OllamaToolCall[];
+}
+
+interface OllamaRespuesta {
+  message?: OllamaMensaje;
+  prompt_eval_count?: number;
+  eval_count?: number;
+  done_reason?: string;
+}
+
+/**
+ * Proveedor local, solo para desarrollo/pruebas sin cuota mientras se ensaya el
+ * flujo. Ver docs/contexto/03-seleccion-modelo-llm.md: Ollama está documentado ahí
+ * como "última opción" por calidad de conversación en español y de tool-calling.
+ * Se promueve a primario **temporalmente** (LLM_PROVIDER=ollama por defecto) para no
+ * quemar la cuota gratuita de Gemini durante iteración; cuando el flujo esté
+ * optimizado, volver a Gemini con LLM_PROVIDER=gemini (un solo valor de entorno, sin
+ * tocar código, tal como exige `obtenerLlmProvider`).
+ *
+ * Requiere tener `ollama serve` corriendo local y el modelo descargado
+ * (`ollama pull <modelo>`). Un modelo con soporte de tool-calling es obligatorio
+ * porque el orquestador depende de `consultarCliente` / `consultarOpcionesValidas` /
+ * `registrarAcuerdo` — por ejemplo `llama3.1`, `qwen2.5` o `mistral-nemo`.
+ */
+function crearOllamaProvider(): LlmProvider {
+  const baseUrl = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/+$/, "");
+  const modelo = process.env.OLLAMA_MODEL ?? "llama3.1";
+  const timeoutMs = Number(process.env.OLLAMA_TIMEOUT_MS ?? 60_000);
+
+  return {
+    nombre: "ollama",
+    modeloVersion: modelo,
+
+    async generar(peticion: PeticionLlm): Promise<RespuestaLlm> {
+      const systemInstruction = [peticion.systemPrompt, peticion.contexto]
+        .concat(peticion.notaCorrectiva ? [`## CORRECCIÓN\n${peticion.notaCorrectiva}`] : [])
+        .join("\n\n");
+
+      const mensajes: OllamaMensaje[] = [{ role: "system", content: systemInstruction }];
+
+      for (const m of peticion.historial) {
+        if (m.rol === "tool" && m.resultadoTool) {
+          mensajes.push({ role: "tool", content: JSON.stringify(m.resultadoTool.salida) });
+          continue;
+        }
+        if (m.rol === "agente" && m.llamadasTool && m.llamadasTool.length > 0) {
+          mensajes.push({
+            role: "assistant",
+            content: m.texto,
+            tool_calls: m.llamadasTool.map((ll) => ({
+              function: { name: ll.nombre, arguments: ll.argumentos },
+            })),
+          });
+          continue;
+        }
+        mensajes.push({ role: m.rol === "cliente" ? "user" : "assistant", content: m.texto });
+      }
+
+      const body: Record<string, unknown> = {
+        model: modelo,
+        messages: mensajes,
+        stream: false,
+        options: { temperature: TEMPERATURE, num_predict: MAX_OUTPUT_TOKENS },
+      };
+
+      if (peticion.tools.length > 0) {
+        body.tools = peticion.tools.map((t) => ({
+          type: "function",
+          function: { name: t.nombre, description: t.descripcion, parameters: t.parametros },
+        }));
+      }
+
+      const controlador = new AbortController();
+      const timeout = setTimeout(() => controlador.abort(), timeoutMs);
+
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controlador.signal,
+        });
+      } catch (e) {
+        const esAbort = e instanceof Error && e.name === "AbortError";
+        throw new Error(
+          esAbort
+            ? `Ollama no respondió en ${timeoutMs} ms (modelo "${modelo}"). Un modelo grande puede tardar más en la primera carga; subí OLLAMA_TIMEOUT_MS si hace falta.`
+            : `No se pudo conectar a Ollama en ${baseUrl}. ¿Está corriendo "ollama serve" y descargado el modelo ("ollama pull ${modelo}")?`,
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!res.ok) {
+        const detalle = (await res.text().catch(() => "")).slice(0, 300);
+        throw new Error(`Ollama respondió ${res.status}: ${detalle}`);
+      }
+
+      const datos = (await res.json()) as OllamaRespuesta;
+      const mensaje = datos.message;
+
+      const llamadasTool: LlamadaTool[] = (mensaje?.tool_calls ?? []).map((tc) => ({
+        nombre: tc.function.name,
+        argumentos: tc.function.arguments ?? {},
+      }));
+
+      return {
+        texto: (mensaje?.content ?? "").trim(),
+        llamadasTool,
+        tokensIn: datos.prompt_eval_count ?? null,
+        tokensOut: datos.eval_count ?? null,
+        modeloVersion: modelo,
+        truncada: datos.done_reason === "length",
+      };
+    },
+  };
+}
+
 export function obtenerLlmProvider(): LlmProvider {
-  const nombre = process.env.LLM_PROVIDER ?? "gemini";
+  const nombre = process.env.LLM_PROVIDER ?? "ollama";
   if (nombre === "gemini") return crearGeminiProvider();
+  if (nombre === "ollama") return crearOllamaProvider();
   throw new Error(
-    `LLM_PROVIDER="${nombre}" no está implementado. El primario es "gemini"; el fallback a Groq está decidido pero todavía no construido (ver docs/contexto/03-seleccion-modelo-llm.md).`,
+    `LLM_PROVIDER="${nombre}" no está implementado. Proveedores disponibles: "ollama" (local, primario mientras se prueba el flujo) y "gemini" (AI Studio, para cuando el flujo esté optimizado). El fallback a Groq está decidido pero todavía no construido (ver docs/contexto/03-seleccion-modelo-llm.md).`,
   );
 }

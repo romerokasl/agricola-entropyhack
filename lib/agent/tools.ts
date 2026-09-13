@@ -25,7 +25,15 @@ const esquemaRegistrarAcuerdo = z
   .object({
     tipo: z.string().min(1),
     diaAcordado: z.number().int().min(1).max(31),
-    monto: z.number().positive().optional(),
+    // `nullish`, no `optional`: medido con qwen2.5:3b, un modelo puede mandar
+    // `monto: null` para decir "sin monto" en vez de omitir el campo. Con `optional`
+    // eso es un error de parseo y el acuerdo no se registra — justo en el turno de
+    // cierre, que es el momento que más importa del demo.
+    monto: z
+      .number()
+      .positive()
+      .nullish()
+      .transform((v) => v ?? undefined),
   })
   .strict();
 
