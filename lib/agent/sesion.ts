@@ -71,13 +71,28 @@ function validarCanal(canal: Canal, modoVoz: ModoVoz | null): void {
   }
 }
 
-export async function iniciarConversacion(params: {
+export interface ConversacionAbierta {
+  conversacionId: string;
+  cliente: Cliente;
+  senal: SenalRiesgo;
+}
+
+/**
+ * Abre el registro sin correr el primer turno: señal de riesgo, decisión de contacto y
+ * fila en `conversaciones`.
+ *
+ * Existe aparte de `iniciarConversacion` para speech-to-speech, donde el primer turno no
+ * lo redacta el LLM de texto sino el modelo de audio. Sin esta separación, S2S tendría
+ * que copiar la decisión de contacto — y con dos copias el caso de control (Marta) se
+ * podría romper en un canal y no en el otro.
+ */
+export async function abrirConversacion(params: {
   slug: string;
   apertura: Apertura;
   canal?: Canal;
   modoVoz?: ModoVoz | null;
   hoy?: Date;
-}): Promise<InicioConversacion> {
+}): Promise<ConversacionAbierta> {
   const canal = params.canal ?? "texto";
   const modoVoz = params.modoVoz ?? null;
   const hoy = params.hoy ?? new Date();
@@ -115,13 +130,28 @@ export async function iniciarConversacion(params: {
     motivoContacto: params.apertura === "agente" ? dx.motivo : null,
   });
 
+  return { conversacionId: conversacion.id, cliente, senal };
+}
+
+export async function iniciarConversacion(params: {
+  slug: string;
+  apertura: Apertura;
+  canal?: Canal;
+  modoVoz?: ModoVoz | null;
+  hoy?: Date;
+}): Promise<InicioConversacion> {
+  const canal = params.canal ?? "texto";
+  const hoy = params.hoy ?? new Date();
+
+  const { conversacionId, cliente, senal } = await abrirConversacion({ ...params, hoy });
+
   if (params.apertura === "cliente") {
-    return { conversacionId: conversacion.id, cliente, senal, turnos: [], turno: null };
+    return { conversacionId, cliente, senal, turnos: [], turno: null };
   }
 
   const turno = await ejecutarTurno({
     cliente,
-    conversacionId: conversacion.id,
+    conversacionId,
     apertura: params.apertura,
     historial: [],
     hoy,
@@ -130,7 +160,7 @@ export async function iniciarConversacion(params: {
   });
 
   return {
-    conversacionId: conversacion.id,
+    conversacionId,
     cliente,
     senal,
     turnos: [{ rol: "agente", texto: turno.texto }],
