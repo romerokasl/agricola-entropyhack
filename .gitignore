@@ -257,3 +257,4 @@ ml/.venv/
 
 # Binarios y modelos de voz (se bajan con: npm run voz:instalar)
 voice/pipeline/bin/
+muestras-voz/

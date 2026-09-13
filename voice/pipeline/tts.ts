@@ -182,74 +182,85 @@ function crearEdgeTtsProvider(): TtsProvider {
 }
 
 /**
- * Proveedor Google Cloud Text-to-Speech con voces WaveNet.
- * Requiere GOOGLE_APPLICATION_CREDENTIALS_JSON en .env.local (Service Account JSON)
+ * Proveedor Google Cloud Text-to-Speech.
+ * Requiere GOOGLE_APPLICATION_CREDENTIALS_JSON en .env.local (Service Account JSON).
  *
- * VOCES WAVENET DISPONIBLES (es-SV / es-MX):
- * - es-SV-Standard-A: Masculina, acento salvadoreño natural ⭐⭐⭐⭐⭐
- * - es-SV-Neural2-A: Masculina, WaveNet ultra-natural (MOS 4.1/5) ⭐⭐⭐⭐⭐⭐
- * - es-MX-Neural2-B: Masculina, WaveNet mexicana natural
+ * OJO: Google **no publica voces `es-SV` ni `es-MX`**. Para español solo existen
+ * `es-ES` (España) y `es-US` (latinoamericano neutro). Pedir `es-SV-*` devuelve 400
+ * y tumba la llamada — por eso el acento salvadoreño acá sale de `es-US`, que es
+ * el neutro que un salvadoreño reconoce como propio sin sonar peninsular.
  *
- * WaveNet vs Edge: MOS 4.1/5 (Google) vs 3.8/5 (Edge) — claramente superior en naturalidad.
+ * MASCULINAS es-US, de más a menos natural:
+ * 1. es-US-Chirp3-HD-Charon  ⭐⭐⭐⭐⭐ (Chirp3 HD, la generación más humana de Google)
+ * 2. es-US-Chirp3-HD-Algenib ⭐⭐⭐⭐⭐
+ * 3. es-US-Studio-B          ⭐⭐⭐⭐  (entrenada para narración expresiva)
+ * 4. es-US-Neural2-B         ⭐⭐⭐⭐  (WaveNet Neural2, MOS ~4.1/5)
+ *
+ * El `languageCode` se deriva del nombre de la voz: "es-US-Studio-B" → "es-US".
  */
 function crearGoogleCloudTtsProvider(): TtsProvider {
-  const voz = process.env.GOOGLE_CLOUD_VOZ ?? "es-SV-Neural2-A";
-  const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+  const voz = process.env.GOOGLE_CLOUD_VOZ ?? "es-US-Chirp3-HD-Charon";
   const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
 
-  if (!credentialsJson || !projectId) {
+  if (!credentialsJson) {
     throw new Error(
-      "Google Cloud TTS requiere GOOGLE_APPLICATION_CREDENTIALS_JSON y GOOGLE_CLOUD_PROJECT_ID en .env.local",
+      "Google Cloud TTS requiere GOOGLE_APPLICATION_CREDENTIALS_JSON en .env.local (el JSON de la cuenta de servicio en una sola línea).",
     );
   }
 
-  let credentials: Record<string, unknown>;
+  let credentials: { project_id?: string; [k: string]: unknown };
   try {
     credentials = JSON.parse(credentialsJson);
   } catch {
-    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON no es un JSON válido");
+    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON no es un JSON válido.");
   }
 
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID ?? credentials.project_id;
+  // "es-US-Chirp3-HD-Charon" → "es-US". Hardcodearlo fue el bug que devolvía 400.
+  const languageCode = voz.split("-").slice(0, 2).join("-");
+  const client = new textToSpeech.TextToSpeechClient({ credentials, projectId });
+
   return {
-    nombre: `google-cloud/${voz}`,
+    nombre: `google/${voz}`,
 
     async sintetizar(texto: string): Promise<ResultadoTts> {
       const inicio = Date.now();
 
+      const [respuesta] = await client.synthesizeSpeech({
+        input: { text: texto },
+        voice: { languageCode, name: voz },
+        audioConfig: { audioEncoding: "MP3" as const },
+      });
+
+      if (!respuesta.audioContent) {
+        throw new Error(`Google Cloud TTS no devolvió audio para la voz "${voz}".`);
+      }
+
+      return {
+        audio: Buffer.from(respuesta.audioContent as Uint8Array),
+        mime: "audio/mp3",
+        latenciaMs: Date.now() - inicio,
+      };
+    },
+  };
+}
+
+/**
+ * Si Google falla (cuota, red, voz inexistente) la llamada no se puede quedar muda:
+ * se cae a Edge, que no necesita credenciales. El pitch pierde calidad de voz, no la demo.
+ */
+function conRespaldo(principal: TtsProvider, respaldo: TtsProvider): TtsProvider {
+  return {
+    nombre: principal.nombre,
+    async sintetizar(texto: string): Promise<ResultadoTts> {
       try {
-        const client = new textToSpeech.TextToSpeechClient({
-          credentials: credentials,
-          projectId: projectId,
-        });
-
-        const request = {
-          input: { text: texto },
-          voice: {
-            languageCode: "es-SV",
-            name: voz,
-          },
-          audioConfig: {
-            audioEncoding: 3, // MP3 = 3 en Google Cloud
-            sampleRateHertz: 24000,
-          },
-        };
-
-        const [response] = await client.synthesizeSpeech(request);
-        const audioContent = response.audioContent;
-
-        if (!audioContent) {
-          throw new Error("Google Cloud TTS no devolvió contenido de audio");
-        }
-
-        return {
-          audio: Buffer.from(audioContent as Uint8Array),
-          mime: "audio/mp3",
-          latenciaMs: Date.now() - inicio,
-        };
+        return await principal.sintetizar(texto);
       } catch (error) {
-        throw new Error(
-          `Google Cloud TTS error: ${error instanceof Error ? error.message : String(error)}`,
+        console.error(
+          `[tts] ${principal.nombre} falló, usando ${respaldo.nombre}:`,
+          error instanceof Error ? error.message : error,
         );
+        return respaldo.sintetizar(texto);
       }
     },
   };
@@ -265,7 +276,7 @@ export function obtenerTtsProvider(): TtsProvider | null {
   if (nombre === "edge" || nombre === "neural" || nombre === "msedge") return crearEdgeTtsProvider();
   if (nombre === "piper") return crearPiperProvider();
   if (nombre === "google" || nombre === "google-cloud" || nombre === "wavenet")
-    return crearGoogleCloudTtsProvider();
+    return conRespaldo(crearGoogleCloudTtsProvider(), crearEdgeTtsProvider());
   throw new Error(
     `TTS_PROVIDER="${nombre}" no está implementado. Valores válidos: "edge" (Neuronal El Salvador/México), "google" (WaveNet ultra-natural), "piper" (local) y "navegador" (SpeechSynthesis del cliente).`,
   );
