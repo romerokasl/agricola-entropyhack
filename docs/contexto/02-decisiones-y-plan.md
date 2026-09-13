@@ -88,7 +88,7 @@ Es la respuesta que un banco quiere oír y es la correcta:
 - El código decide **qué se puede ofrecer** — la escalera de opciones, los límites de
   plazo y monto están en código, no en el prompt.
 - Temperatura **0.2** (recomendación de Alejandro).
-- **Validador determinista** en cada turno (ver `01-REGLAS-DEL-AGENTE.md` §5).
+- **Validador determinista** en cada turno (ver `01-reglas-del-agente.md` §5).
 
 **El argumento:** *"La creatividad está en la conversación; la autoridad está en el
 código. El modelo nunca decide solo si un plazo es válido."*
@@ -137,8 +137,12 @@ La solución oficial es determinista y auditable:
 ### 2. Dataset (emi) + monitoreo y data-drift
 
 - El banco confirmó: **el modelo lo hacen ustedes, "no es rocket science"**, y pueden
-  usar un **dataset de juguete**. Ya hay un generador sintético determinista de la
-  investigación previa (2,008 clientes, quincena 15/30, remesas, ~35 % desalineados).
+  usar un **dataset de juguete**.
+- ⚠️ **Corrección (12 sep):** este doc afirmaba que ya existía un generador sintético
+  determinista de la investigación previa (2,008 clientes). **No está en el repo** — el
+  código pre-evento se removió a propósito (ver `supabase/README.md` y el commit
+  `452de0e`). El generador se construyó de cero durante el evento: vive en
+  `scripts/generate-seed.mjs` y está documentado en `supabase/README.md`.
 - **Monitoreo y data-drift: documentarlo, no construirlo.** El `ml/README.md` del repo
   ya menciona PSI y Wasserstein. Una sección en el README diciendo *cómo* se
   monitorearía en producción es suficiente y suma en "solidez técnica". Construirlo hoy

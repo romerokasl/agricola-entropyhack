@@ -21,7 +21,7 @@ pesan 20 puntos cada una.
 **Esto no invalida la investigación previa — la reubica.** Los 5 insights locales
 (quincena, remesas, ventana de 10 días, corresponsales, productos existentes) dejan de
 ser pantallas y pasan a ser **el cerebro del agente**: lo que entiende, lo que ofrece y
-lo que puede negociar. Ver `01-REGLAS-DEL-AGENTE.md`.
+lo que puede negociar. Ver `01-reglas-del-agente.md`.
 
 ---
 
@@ -175,7 +175,7 @@ Nuestro objetivo interno (del doc del equipo): **llamadas < 2 s; texto y audios 
 > *"La mejor arquitectura no es la más compleja: es la que funciona, se puede explicar y
 > se mantiene estable durante el demo."*
 
-**Nuestras respuestas están en `03-DECISIONES-Y-PLAN.md`. Que las sepa decir cualquiera
+**Nuestras respuestas están en `02-decisiones-y-plan.md`. Que las sepa decir cualquiera
 del equipo, no solo el dev.**
 
 ---
@@ -202,7 +202,7 @@ puede negociar es **corto plazo**: la fecha de vencimiento, o **1 a 3 días desp
 > modelo."* — Alejandro
 
 **Esto es una prueba anunciada.** Hay que probarla nosotros veinte veces antes. Ver la
-batería de ataque en `01-REGLAS-DEL-AGENTE.md`.
+batería de ataque en `01-reglas-del-agente.md`.
 
 ### Temperatura
 
@@ -318,8 +318,11 @@ mensaje** funciona mejor que varias.
 **Stack actual:** Next.js **14.2.24** + React 18 + Tailwind **3** + Supabase +
 **microservicio Python FastAPI** (`ml/api.py`).
 
-Verificado hoy en el contenedor: `npm install` ✅ · `pip install -r ml/requirements.txt`
+Verificado hoy en el contenedor: `npm ci` ✅ · `pip install -r ml/requirements.txt`
 ✅ · `npm run build` ✅ · FastAPI `/health` ✅ · `/api/predict` con fallback ✅.
+
+> ⚠️ Usar **`npm ci`**, no `npm install` — `CLAUDE.md` lo prohíbe porque reescribe el
+> lockfile y genera conflictos entre las 4 laptops.
 
 ### ⚠️ Observación honesta sobre el repo
 
@@ -333,7 +336,16 @@ conversación, la negociación y el cierre**, que hoy no existen en el repo.
 
 **Recomendación:** congelar el scorer donde está (ya funciona, ya explica sus razones) y
 volcar todo el esfuerzo restante en el agente conversacional, el registro y el
-dashboard. Ver `03-DECISIONES-Y-PLAN.md`.
+dashboard. Ver `02-decisiones-y-plan.md`.
+
+> ⚠️ **El scorer es interno: su texto NUNCA se le muestra al cliente.**
+> `app/api/predict/route.ts` trae un `adviceMap` con campos `empatheticMessage` listos
+> para mostrar, y el nivel `CRITICAL` salta directo a una readecuación — que es el
+> **escalón 7** de la escalera, violando la regla "ofrecé el escalón mínimo suficiente".
+> Además esos textos no pasan por el validador determinista. El scorer solo decide
+> **a quién** contactar y aporta contexto de riesgo; **el mensaje que ve el cliente lo
+> genera siempre el agente y siempre pasa el validador.** No cablear `empatheticMessage`
+> a la UI.
 
 ### Nota de marca
 
@@ -359,8 +371,9 @@ decisión de diseño previa.
 | `00-contexto-global.md` | Este documento |
 | `01-reglas-del-agente.md` | System prompt, reglas de negociación, guardrails, batería de ataque |
 | `02-decisiones-y-plan.md` | Las 5 decisiones a defender, los 7 puntos del doc del equipo, orden de construcción, métricas del dashboard |
-| `03-productos-y-ncb022.md` | Análisis y aplicación al proyecto: por qué importa la elegibilidad de cada producto, fórmula de "provisiones evitadas" para el dashboard, distinción NCB-022 vs. ventana de 10 días |
-| `04-ncb022-norma-completa.md` | **La referencia operativa.** Transcripción completa de NCB-022 (Consumo y Vivienda — Empresa excluido por decisión del equipo) + reglas de elegibilidad de cada producto en formato listo para que el agente/validador lo consulte y no ofrezca nada que el banco rechazaría |
+| `03-seleccion-modelo-llm.md` | Decisión de LLM (compartida con `voice/pipeline/docs/model-selection.md`): comparación paga y cadena de fallback a costo cero |
+| `05-productos-y-ncb022.md` | Análisis y aplicación al proyecto: por qué importa la elegibilidad de cada producto, fórmula de "provisiones evitadas" para el dashboard, distinción NCB-022 vs. ventana de 10 días |
+| `06-ncb022-norma-completa.md` | **La referencia operativa.** Transcripción completa de NCB-022 (Consumo y Vivienda — Empresa excluido por decisión del equipo) + reglas de elegibilidad de cada producto en formato listo para que el agente/validador lo consulte y no ofrezca nada que el banco rechazaría |
 
 ---
 
