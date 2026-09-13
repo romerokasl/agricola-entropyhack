@@ -1,3 +1,4 @@
+import type { SenalRiesgo } from "../riesgo/types";
 import type { Cliente, Diagnostico, MotivoContacto } from "./types";
 
 /**
@@ -21,6 +22,11 @@ function diasHastaDiaDelMes(dia: number, hoy: Date): number {
   const diaHoy = hoy.getDate();
   if (dia >= diaHoy) return dia - diaHoy;
   return diasEnMes(hoy) - diaHoy + dia;
+}
+
+/** Días desde hoy hasta el vencimiento de la cuota. 0 = vence hoy. */
+export function diasHastaVencimiento(cliente: Cliente, hoy: Date = new Date()): number {
+  return diasHastaDiaDelMes(cliente.diaPago, hoy);
 }
 
 export function hayDesalineacionQuincena(cliente: Cliente): boolean {
@@ -66,15 +72,25 @@ export function diasHastaReporteBuro(hoy: Date): number {
  *
  * Esto es lo que hace que el caso de control funcione: Marta no se excluye con un
  * flag en la base de datos, se excluye porque sus datos no disparan ningún motivo.
+ *
+ * `senal` es la salida viva del scorer (`lib/riesgo`). Cuando viene, manda sobre la
+ * columna `riesgo_banda` del cliente, que es el score de lote y puede estar viejo.
+ * El orden de los motivos NO cambia: atraso y desalineación se evalúan antes que el
+ * riesgo, así que una señal baja nunca puede apagar un contacto que los datos duros
+ * ya justificaban.
  */
-export function diagnosticar(cliente: Cliente, hoy: Date = new Date()): Diagnostico {
-  const diasHastaVencimiento = diasHastaDiaDelMes(cliente.diaPago, hoy);
+export function diagnosticar(
+  cliente: Cliente,
+  hoy: Date = new Date(),
+  senal?: SenalRiesgo | null,
+): Diagnostico {
   const base = {
-    diasHastaVencimiento,
+    diasHastaVencimiento: diasHastaVencimiento(cliente, hoy),
     diasHastaReporteBuro: diasHastaReporteBuro(hoy),
     proximoIngreso: proximoIngreso(cliente, hoy),
   };
 
+  const banda = senal?.banda ?? cliente.riesgoBanda;
   let motivo: MotivoContacto | null = null;
   let detalle = "";
 
@@ -87,9 +103,17 @@ export function diagnosticar(cliente: Cliente, hoy: Date = new Date()): Diagnost
   } else if (hayDesalineacionRemesa(cliente)) {
     motivo = "desalineacion_remesa";
     detalle = `Su remesa entra el ${cliente.diaRemesa} y la cuota vence el ${cliente.diaPago}: son ${cliente.diaRemesa! - cliente.diaPago} día(s) de diferencia, todos los meses.`;
-  } else if (cliente.riesgoBanda === "CRITICAL" || cliente.riesgoBanda === "MODERATE_HIGH") {
+  } else if (banda === "CRITICAL" || banda === "MODERATE_HIGH") {
     motivo = "riesgo_alto";
-    detalle = `Sin atraso y con el calendario alineado, pero el scorer lo marca en banda ${cliente.riesgoBanda}.`;
+    // Ojo: este texto entra al prompt dentro de "por qué se abre esta conversación".
+    // No puede nombrar la banda ni al scorer — el modelo lo repetiría, y "score" es
+    // justo una de las palabras que el banco prohibió. Además, acá NO hay un hecho
+    // concreto que contarle a la persona: decirle que un sistema la marcó sería
+    // inventar una razón. La instrucción correcta es preguntar antes de proponer.
+    detalle =
+      "No hay atraso ni desfase de fechas: es un acercamiento preventivo. No hay un " +
+      "hecho concreto que nombrar, así que no inventés uno: preguntá cómo viene su mes " +
+      "antes de proponer nada.";
   } else {
     detalle = "Nada que requiera contacto: sin atraso, calendario alineado y riesgo bajo.";
   }
@@ -97,6 +121,10 @@ export function diagnosticar(cliente: Cliente, hoy: Date = new Date()): Diagnost
   return { ...base, motivo, detalle };
 }
 
-export function debeContactar(cliente: Cliente, hoy: Date = new Date()): boolean {
-  return diagnosticar(cliente, hoy).motivo !== null;
+export function debeContactar(
+  cliente: Cliente,
+  hoy: Date = new Date(),
+  senal?: SenalRiesgo | null,
+): boolean {
+  return diagnosticar(cliente, hoy, senal).motivo !== null;
 }

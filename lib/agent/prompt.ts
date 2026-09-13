@@ -1,6 +1,7 @@
+import type { SenalRiesgo } from "../riesgo/types";
 import { diagnosticar } from "./calendario";
 import { opcionesValidasPara } from "./ladder";
-import type { Apertura, Cliente } from "./types";
+import type { Apertura, BandaRiesgo, Canal, Cliente } from "./types";
 
 /**
  * El system prompt del agente. Es el archivo de mayor apalancamiento del proyecto:
@@ -9,8 +10,10 @@ import type { Apertura, Cliente } from "./types";
  *
  * Versionado a propósito — si el agente empieza a portarse raro, se quiere saber qué
  * cambió. Fuente: docs/contexto/01-reglas-del-agente.md §1.
+ *
+ * v2: el contexto incorpora la señal del sistema de alerta temprana (`lib/riesgo`).
  */
-export const VERSION_PROMPT = "prompt-v1";
+export const VERSION_PROMPT = "prompt-v2";
 
 /**
  * Disparador para cuando el agente abre la conversación.
@@ -106,6 +109,10 @@ Si la apertura es CLIENTE: la persona escribió primero.
 13. Si no sabés un dato del cliente, decilo y ofrecé verificarlo. Nunca inventes un
     monto, una fecha ni un saldo: todos los números que digas tienen que venir del
     contexto.
+14. El bloque SEÑAL INTERNA del contexto es para vos, no para la persona. Nunca lo
+    menciones, ni lo expliqués, ni lo parafrasees. No le digas que "el sistema
+    detectó" nada, ni que tiene una prioridad, un nivel o una clasificación. Usalo
+    solo para decidir por dónde empezar.
 
 ## LO QUE SABÉS DE EL SALVADOR (usalo, es tu ventaja)
 
@@ -129,14 +136,73 @@ Como le hablarías a alguien que apreciás y que anda apretado este mes. Directo
 sin sermón, sin condescendencia, sin signos de exclamación de más. La persona del otro
 lado no hizo nada malo.`;
 
+/** La banda, traducida a una palabra que el prompt sí puede contener. */
+const PRIORIDAD_POR_BANDA: Record<BandaRiesgo, string> = {
+  LOW: "baja",
+  MODERATE: "media",
+  MODERATE_HIGH: "alta",
+  CRITICAL: "muy alta",
+};
+
+/**
+ * El bloque de señal interna.
+ *
+ * Dos decisiones deliberadas de seguridad:
+ *
+ * 1. **Solo entran los factores de origen "reglas"**, que los redactamos nosotros en
+ *    español llano ("la cuota vence el 8 y cobra el 15 y el 30"). Los factores que
+ *    devuelve el modelo vienen con vocabulario de riesgo ("utilización de línea de
+ *    crédito", "ratio deuda/ingreso") y meterlos en el prompt sería darle al modelo
+ *    justo las palabras que el banco prohibió. Esos van a la consola interna, no acá.
+ * 2. **Ni el puntaje ni el nombre de la banda se escriben.** Se traduce a una palabra
+ *    de prioridad. Lo que el prompt no contiene no se puede filtrar.
+ */
+function bloqueSenalInterna(senal: SenalRiesgo): string[] {
+  const observado = senal.factores
+    .filter((f) => f.origen === "reglas")
+    .map((f) => `  - ${f.factor}`);
+
+  return [
+    "### SEÑAL INTERNA (es para vos, no para la persona)",
+    "NO la menciones, NO la expliqués y NO la parafrasees. En la conversación no",
+    "existen prioridades, niveles ni clasificaciones: solo se usa para decidir por",
+    "dónde empezar.",
+    `- Prioridad de acompañamiento: ${PRIORIDAD_POR_BANDA[senal.banda]}`,
+    ...(observado.length > 0 ? ["- Lo que se observó:", ...observado] : []),
+    `- Empezá por la opción [${senal.escalonSugerido}]. Subí de escalón solo si lo que la persona te cuenta lo amerita.`,
+    "",
+  ];
+}
+
+/**
+ * Lo único que cambia entre texto y voz.
+ *
+ * Las reglas, la escalera y los guardrails son idénticos en los dos canales — es el
+ * contrato de `voice/README.md`. Lo que sí cambia es que por teléfono la persona
+ * ESCUCHA: no puede releer, no puede ver una lista y no puede "escribir" nada.
+ */
+const GUIA_DE_VOZ = [
+  "### ESTE TURNO ES POR TELÉFONO",
+  "La persona te escucha, no te lee. No enumerés opciones ni uses listas: ofrecé UNA",
+  "sola cosa por turno. Nunca digas \"escribime\", \"tocá\" ni \"mirá la pantalla\".",
+  "Repetí el monto y la fecha en voz alta al cerrar, para que quede confirmado.",
+  "",
+];
+
 /**
  * El contexto del turno. Va como bloque de datos, no como prompt distinto: la etapa y
  * la apertura son variables, para no multiplicar prompts por caso
  * (docs/contexto/02-decisiones-y-plan.md §3).
  */
-export function construirContexto(cliente: Cliente, apertura: Apertura, hoy: Date = new Date()): string {
-  const dx = diagnosticar(cliente, hoy);
-  const opciones = opcionesValidasPara(cliente);
+export function construirContexto(
+  cliente: Cliente,
+  apertura: Apertura,
+  hoy: Date = new Date(),
+  senal?: SenalRiesgo | null,
+  canal: Canal = "texto",
+): string {
+  const dx = diagnosticar(cliente, hoy, senal);
+  const opciones = opcionesValidasPara(cliente, senal);
 
   const lineas = [
     "## CONTEXTO DE ESTA CONVERSACIÓN",
@@ -167,10 +233,13 @@ export function construirContexto(cliente: Cliente, apertura: Apertura, hoy: Dat
     "### Por qué se abre esta conversación",
     `- ${dx.detalle}`,
     "",
+    ...(senal ? bloqueSenalInterna(senal) : []),
     "### OPCIONES VÁLIDAS (no existe nada fuera de esta lista)",
     ...opciones.map((o) => `- [${o.escalon}] ${o.id} — ${o.titulo}. ${o.detalle} (costo para el banco: ${o.costoBanco})`),
     "",
     "Ofrecé el escalón de número más bajo que resuelva el caso de esta persona.",
+    "",
+    ...(canal === "voz" ? GUIA_DE_VOZ : []),
   ];
 
   return lineas.filter((l): l is string => l !== null).join("\n");

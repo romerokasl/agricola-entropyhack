@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { guardarAcuerdo, guardarNoAcuerdo } from "../db/conversaciones";
+import type { SenalRiesgo } from "../riesgo/types";
 import { diagnosticar } from "./calendario";
 import { ESCALERA, opcionesValidasPara } from "./ladder";
 import type { DeclaracionTool } from "./llm";
@@ -84,6 +85,13 @@ export interface ContextoTools {
   cliente: Cliente;
   conversacionId: string;
   hoy: Date;
+  /**
+   * La señal de riesgo del turno. Va acá para que la lista de opciones que ve el
+   * modelo y la que valida el registro del acuerdo sean LA MISMA. Si difirieran, el
+   * agente podría ofrecer algo que después el registro rechaza — y eso pasaría justo
+   * en el turno de cierre.
+   */
+  senal?: SenalRiesgo | null;
 }
 
 export interface ResultadoTool {
@@ -117,13 +125,13 @@ export async function ejecutarTool(
   argumentos: Record<string, unknown>,
   ctx: ContextoTools,
 ): Promise<ResultadoTool> {
-  const { cliente, conversacionId, hoy } = ctx;
+  const { cliente, conversacionId, hoy, senal } = ctx;
 
   if (nombre === "consultarCliente") {
     if (!esquemaConsultarCliente.safeParse(argumentos).success) {
       return errorTool(nombre, "Esta herramienta no recibe parámetros.");
     }
-    const dx = diagnosticar(cliente, hoy);
+    const dx = diagnosticar(cliente, hoy, senal);
     return {
       nombre,
       salida: {
@@ -151,7 +159,7 @@ export async function ejecutarTool(
     return {
       nombre,
       salida: {
-        opciones: opcionesValidasPara(cliente).map((o) => ({
+        opciones: opcionesValidasPara(cliente, senal).map((o) => ({
           escalon: o.escalon,
           tipo: o.id,
           titulo: o.titulo,
@@ -171,9 +179,9 @@ export async function ejecutarTool(
     }
     const { tipo, diaAcordado, monto } = parsed.data;
 
-    const opcion = opcionesValidasPara(cliente).find((o) => o.id === tipo);
+    const opcion = opcionesValidasPara(cliente, senal).find((o) => o.id === tipo);
     if (!opcion) {
-      const disponibles = opcionesValidasPara(cliente).map((o) => o.id).join(", ");
+      const disponibles = opcionesValidasPara(cliente, senal).map((o) => o.id).join(", ");
       return errorTool(
         nombre,
         `"${tipo}" no es una opción disponible para esta persona. Las disponibles son: ${disponibles}.`,

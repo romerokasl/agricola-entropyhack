@@ -1,3 +1,4 @@
+import type { SenalRiesgo } from "../riesgo/types";
 import { fechaSugeridaAlineada, hayDesalineacionQuincena, hayDesalineacionRemesa } from "./calendario";
 import type { Cliente } from "./types";
 
@@ -63,8 +64,16 @@ export interface OpcionValida extends Escalon {
  *
  * El modelo nunca decide si una opción aplica: recibe esta lista y elige, dentro de
  * ella, el escalón más bajo que resuelva el caso.
+ *
+ * `senal` es la salida viva del scorer (`lib/riesgo`). Solo puede DESBLOQUEAR el
+ * escalón caro de reestructura ante estrés sostenido; nunca puede saltarse un
+ * guardrail ni agregar una opción que no esté en la escalera. El riesgo modula qué
+ * está disponible, no qué está permitido.
  */
-export function opcionesValidasPara(cliente: Cliente): readonly OpcionValida[] {
+export function opcionesValidasPara(
+  cliente: Cliente,
+  senal?: SenalRiesgo | null,
+): readonly OpcionValida[] {
   const validas: OpcionValida[] = [];
   const porId = (id: IdEscalon): Escalon => {
     const e = ESCALERA.find((x) => x.id === id);
@@ -102,7 +111,8 @@ export function opcionesValidasPara(cliente: Cliente): readonly OpcionValida[] {
 
   // Escalón caro: solo ante estrés sostenido, nunca como primera oferta. Es el error
   // que comete el adviceMap de /api/predict, que salta aquí directo.
-  if (cliente.diasAtraso > 15 || cliente.riesgoBanda === "CRITICAL") {
+  const banda = senal?.banda ?? cliente.riesgoBanda;
+  if (cliente.diasAtraso > 15 || banda === "CRITICAL") {
     agregar("reestructura", "Readecuación del crédito, por estrés sostenido.");
   }
 
@@ -111,8 +121,12 @@ export function opcionesValidasPara(cliente: Cliente): readonly OpcionValida[] {
   return validas;
 }
 
-export function esEscalonValidoPara(cliente: Cliente, id: string): boolean {
-  return opcionesValidasPara(cliente).some((o) => o.id === id);
+export function esEscalonValidoPara(
+  cliente: Cliente,
+  id: string,
+  senal?: SenalRiesgo | null,
+): boolean {
+  return opcionesValidasPara(cliente, senal).some((o) => o.id === id);
 }
 
 /** Un plazo es válido si cae en el vencimiento o hasta 3 días después. */

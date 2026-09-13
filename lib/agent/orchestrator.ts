@@ -1,8 +1,9 @@
 import { agregarTurno } from "../db/conversaciones";
+import type { SenalRiesgo } from "../riesgo/types";
 import { obtenerLlmProvider, type MensajeLlm } from "./llm";
 import { construirContexto, DISPARADOR_APERTURA, SYSTEM_PROMPT, VERSION_PROMPT } from "./prompt";
 import { DECLARACIONES, ejecutarTool } from "./tools";
-import type { Apertura, Cliente, Turno } from "./types";
+import type { Apertura, Canal, Cliente, Turno } from "./types";
 import { respuestaSegura, validar, type MotivoRechazo } from "./validator";
 
 /**
@@ -42,12 +43,22 @@ export async function ejecutarTurno(params: {
   apertura: Apertura;
   historial: readonly Turno[];
   hoy?: Date;
+  /**
+   * La señal de alerta temprana de esta conversación (`lib/riesgo`). Se calcula una
+   * sola vez al abrir y se reusa en cada turno: llamar al scorer por turno le sumaría
+   * latencia a una respuesta que la persona está esperando, y además haría que el
+   * registro de la conversación no tuviera una única señal que la explique.
+   */
+  senal?: SenalRiesgo | null;
+  /** Texto o voz. Cambia cómo se redacta el turno, nunca qué se puede ofrecer. */
+  canal?: Canal;
 }): Promise<ResultadoTurno> {
-  const { cliente, conversacionId, apertura, historial } = params;
+  const { cliente, conversacionId, apertura, historial, senal } = params;
   const hoy = params.hoy ?? new Date();
+  const canal = params.canal ?? "texto";
 
   const proveedor = obtenerLlmProvider();
-  const contexto = construirContexto(cliente, apertura, hoy);
+  const contexto = construirContexto(cliente, apertura, hoy, senal, canal);
   const inicio = Date.now();
 
   const mensajes: MensajeLlm[] = aMensajes(historial);
@@ -89,6 +100,7 @@ export async function ejecutarTurno(params: {
         cliente,
         conversacionId,
         hoy,
+        senal,
       });
       if (resultado.cerroConversacion) cerroConversacion = true;
       mensajes.push({
@@ -100,7 +112,7 @@ export async function ejecutarTurno(params: {
   }
 
   // --- Validación: un reintento correctivo, después respuesta segura ---------
-  const ctxValidacion = { cliente, historial, esPrimerMensajeDelAgente };
+  const ctxValidacion = { cliente, historial, esPrimerMensajeDelAgente, senal };
   // Una respuesta cortada a media frase nunca se muestra, aunque el resto pase.
   const validacion = truncada
     ? {

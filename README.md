@@ -86,26 +86,29 @@ TIER A (0-14 d)              TIER B y C (14-31 d y 32-120 d)     TIER D-E+ (120-
                         └──────────────────────┬───────────────────────┘
                                                │
                                     ┌──────────▼──────────┐
-                                    │      /api/chat      │
-                                    │  orquestador de     │
-                                    │  un turno           │
+                                    │  lib/agent/sesion   │
+                                    │  la conversación,   │
+                                    │  sin canal          │
+                                    │  (texto y voz usan  │
+                                    │   estas 2 funciones)│
                                     └──────────┬──────────┘
                                                │
         ┌──────────────────────┬───────────────┼───────────────┬──────────────────────┐
         │                      │               │               │                      │
 ┌───────▼────────┐   ┌─────────▼────────┐  ┌───▼──────────┐  ┌─▼──────────────┐  ┌────▼───────────┐
-│  LLM (1 file)  │   │  Tools tipadas   │  │  Validador   │  │   Supabase     │  │   ML Service   │
-│ lib/agent/llm  │   │  Zod → Postgres  │  │ determinista │  │ clientes ·     │  │ /api/predict   │
-│ Gemini Flash   │   │  sin RAG         │  │ en cada turno│  │ conversaciones │  │ LightGBM/XGB   │
-│                │   │                  │  │ ANTES de     │  │ turnos ·       │  │ (interno)      │
-│                │   │                  │  │ mostrar      │  │ acuerdos · RLS │  │ SHAP values    │
+│  LLM (1 file)  │   │  Tools tipadas   │  │  Validador   │  │   Supabase     │  │  Señal riesgo  │
+│ lib/agent/llm  │   │  Zod → Postgres  │  │ determinista │  │ clientes ·     │  │  lib/riesgo    │
+│ Gemini Flash   │   │  sin RAG         │  │ en cada turno│  │ conversaciones │  │  modelo vivo · │
+│                │   │                  │  │ ANTES de     │  │ turnos ·       │  │  lote · reglas │
+│                │   │                  │  │ mostrar      │  │ acuerdos · RLS │  │  → ml/ FastAPI │
 └────────────────┘   └──────────────────┘  └──────────────┘  └────────────────┘  └────────────────┘
 ```
 
 * **Agente Conversacional (`/lib/agent`)**: System prompt con voseo salvadoreño natural, escalera de 8 opciones y límites duros **en código** (no en el prompt), tools tipadas con Zod contra Postgres relacional (sin RAG: la información financiera bancaria es exacta y determinista) y **validador determinista que audita cada turno antes de responder**.
 * **Frontend & Interfaz**: Next.js 14 (App Router), TypeScript estricto, Tailwind CSS. Interfaz estilo WhatsApp (recomendación expresa del banco). Tokens corporativos: amarillo `#FDDA24` (relleno, nunca texto) y grafito `#2C2A29`. **El cliente nunca ve rojo.**
-* **Machine Learning (`/ml`)**: Modelo de clasificación supervisada (LightGBM/XGBoost) con interpretabilidad SHAP. **Es interno:** segmenta a quién contactar y enriquece el contexto del agente; sus textos crudos nunca se le exponen directamente al cliente.
-* **Base de Datos (`/supabase`)**: PostgreSQL con Row-Level Security (RLS). Tablas principales: `clientes`, `conversaciones`, `turnos` (transcripción auditable) y `acuerdos` (resultado estructurado registrado).
+* **Machine Learning (`/ml`)**: Modelo multiclase sobre las clases de atraso de la NCB-022 (LightGBM/XGBoost/CatBoost/Random Forest, comparados con `StratifiedKFold`) con interpretabilidad SHAP, servido por FastAPI con telemetría y detección de data drift.
+* **Señal de Riesgo (`/lib/riesgo`)**: la capa que conecta el modelo con la conversación. Combina **tres vistas** del cliente — el microservicio llamado en vivo, el score de lote de su fila y las reglas de calendario salvadoreño — y produce una señal por conversación que decide **a quién contactar y por dónde empezar**. **Es interna:** el servicio devuelve además mensajes ya redactados, y **esos textos se descartan a propósito** porque rompen los guardrails del banco. El modelo aporta la señal; las palabras las pone el agente. Detalle en [`docs/senal-de-riesgo.md`](docs/senal-de-riesgo.md).
+* **Base de Datos (`/supabase`)**: PostgreSQL con Row-Level Security (RLS). Tablas principales: `clientes`, `conversaciones`, `turnos` (transcripción auditable) y `acuerdos` (resultado estructurado registrado). `conversaciones` guarda además la señal de riesgo y el motivo que abrieron la gestión, para que el registro pueda contestar *por qué* el sistema le habló a esa persona ese día.
 
 ---
 
@@ -143,10 +146,16 @@ npm run seed:apply   # siembra 8 personajes del demo + 300 clientes sintéticos
 
 ### 2.3 Verificación de Reglas y Batería de Ataques
 ```bash
-npm run verify:reglas   # verificación unitaria determinista (calendario, escalera, guardrails)
+npm run verify:reglas   # verificación unitaria determinista (calendario, escalera, guardrails, señal de riesgo)
+npm run riesgo:demo     # la señal de los 8 personajes, con sus tres vistas desglosadas
 npm run ataque          # batería de 20 ataques contra el agente (resistencia en vivo)
 npm run demo:reset      # resetea las conversaciones para dejar el demo limpio
 ```
+
+`npm run riesgo:demo` confirma antes del pitch, sin abrir una conversación, que el caso
+de control (Marta) sigue fuera del conjunto de contacto y si el microservicio de `ml/`
+está aportando. Corre con el servicio levantado y sin él: la columna `vivo` sale vacía
+y el resto no cambia.
 
 ### 3. Servicio de Machine Learning (Opcional - Smart Fallback Activo)
 El BFF cuenta con **Smart Fallback determinista**, por lo que la aplicación corre al 100% incluso si el microservicio Python no está activo.
@@ -164,6 +173,12 @@ pip install -r requirements.txt
 uvicorn api:app --reload --port 8000
 ```
 Swagger UI interactivo en [http://localhost:8000/docs](http://localhost:8000/docs).
+
+> El artefacto entrenado (`model_abcd.pkl`) **no está versionado**: se genera con
+> `python ml/train.py`. Sin él, `api:app` levanta igual y responde con su heurística
+> interna, y la señal de riesgo lo registra como tal en `modeloVersion`. El flujo
+> conversacional no depende de que el servicio esté arriba — ver
+> [`docs/senal-de-riesgo.md`](docs/senal-de-riesgo.md).
 
 ---
 

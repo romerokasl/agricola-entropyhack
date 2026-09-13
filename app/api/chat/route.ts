@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { diagnosticar } from "@/lib/agent/calendario";
-import { ejecutarTurno } from "@/lib/agent/orchestrator";
-import type { Turno } from "@/lib/agent/types";
-import { obtenerClientePorId, obtenerClientePorSlug } from "@/lib/db/clientes";
 import {
-  agregarTurno,
-  crearConversacion,
-  obtenerConversacion,
-  obtenerTurnos,
-} from "@/lib/db/conversaciones";
+  continuarConversacion,
+  ErrorSesion,
+  iniciarConversacion,
+} from "@/lib/agent/sesion";
+
+/**
+ * El canal de texto: un envoltorio HTTP delgado sobre `lib/agent/sesion.ts`.
+ *
+ * La lógica de conversación NO vive acá a propósito. El orquestador de voz va a
+ * llamar a las mismas dos funciones con `canal: "voz"`, y así los dos canales
+ * comparten señal de riesgo, reglas, validador y tablas sin duplicar nada
+ * (contrato de `voice/README.md`).
+ *
+ * Lo que esta respuesta NUNCA lleva: la señal de riesgo. Es interna — queda guardada
+ * con la conversación para el dashboard, pero no cruza hacia el cliente.
+ */
 
 const EsquemaIniciar = z.object({
   accion: z.literal("iniciar"),
@@ -50,100 +57,53 @@ export async function POST(req: NextRequest) {
 
   try {
     if (parsed.data.accion === "iniciar") {
-      const { slug, apertura } = parsed.data;
-
-      const cliente = await obtenerClientePorSlug(slug);
-      if (!cliente) return error("NOT_FOUND", `No existe el cliente "${slug}".`, 404);
-
-      const dx = diagnosticar(cliente);
-
-      // El caso de control vive acá: el sistema se niega a abrir una conversación
-      // proactiva con alguien que no tiene por qué ser contactado. Que la persona
-      // escriba primero siempre se permite — eso es soporte, no cobranza.
-      if (apertura === "agente" && dx.motivo === null) {
-        return error(
-          "NO_CONTACTAR",
-          `El sistema no abre conversación con ${cliente.nombre}: ${dx.detalle}`,
-          409,
-        );
-      }
-
-      const conversacion = await crearConversacion({
-        clienteId: cliente.id,
+      const inicio = await iniciarConversacion({
+        slug: parsed.data.slug,
+        apertura: parsed.data.apertura,
         canal: "texto",
-        modoVoz: null,
-        apertura,
-      });
-
-      if (apertura === "cliente") {
-        return NextResponse.json({
-          success: true,
-          data: { conversacionId: conversacion.id, cliente: { nombre: cliente.nombre }, turnos: [] },
-        });
-      }
-
-      const turno = await ejecutarTurno({
-        cliente,
-        conversacionId: conversacion.id,
-        apertura,
-        historial: [],
       });
 
       return NextResponse.json({
         success: true,
         data: {
-          conversacionId: conversacion.id,
-          cliente: { nombre: cliente.nombre },
-          turnos: [{ rol: "agente", texto: turno.texto }],
-          metricas: {
-            latenciaMs: turno.latenciaMs,
-            tokensIn: turno.tokensIn,
-            tokensOut: turno.tokensOut,
-            validadorOk: turno.validadorOk,
-          },
+          conversacionId: inicio.conversacionId,
+          cliente: { nombre: inicio.cliente.nombre },
+          turnos: inicio.turnos,
+          ...(inicio.turno
+            ? {
+                metricas: {
+                  latenciaMs: inicio.turno.latenciaMs,
+                  tokensIn: inicio.turno.tokensIn,
+                  tokensOut: inicio.turno.tokensOut,
+                  validadorOk: inicio.turno.validadorOk,
+                },
+              }
+            : {}),
         },
       });
     }
 
-    const { conversacionId, texto } = parsed.data;
-
-    const conversacion = await obtenerConversacion(conversacionId);
-    if (!conversacion) return error("NOT_FOUND", "Esa conversación no existe.", 404);
-    if (conversacion.estado !== "abierta") {
-      return error("CERRADA", "Esa conversación ya está cerrada.", 409);
-    }
-
-    const cliente = await obtenerClientePorId(conversacion.clienteId);
-    if (!cliente) return error("NOT_FOUND", "El cliente de esa conversación no existe.", 404);
-
-    // Se lee el historial una sola vez y se arma en memoria, en vez de releerlo
-    // después de insertar: son dos viajes menos a la base por turno.
-    const previos = await obtenerTurnos(conversacionId);
-    await agregarTurno({ conversacionId, indice: previos.length, rol: "cliente", texto });
-    const historial: Turno[] = [...previos, { rol: "cliente", texto }];
-
-    const turno = await ejecutarTurno({
-      cliente,
-      conversacionId,
-      apertura: conversacion.apertura,
-      historial,
+    const respuesta = await continuarConversacion({
+      conversacionId: parsed.data.conversacionId,
+      texto: parsed.data.texto,
     });
 
     return NextResponse.json({
       success: true,
       data: {
-        conversacionId,
-        turnos: [{ rol: "agente", texto: turno.texto }],
-        cerrada: turno.cerroConversacion,
+        conversacionId: respuesta.conversacionId,
+        turnos: [{ rol: "agente", texto: respuesta.turno.texto }],
+        cerrada: respuesta.cerrada,
         metricas: {
-          latenciaMs: turno.latenciaMs,
-          tokensIn: turno.tokensIn,
-          tokensOut: turno.tokensOut,
-          validadorOk: turno.validadorOk,
+          latenciaMs: respuesta.turno.latenciaMs,
+          tokensIn: respuesta.turno.tokensIn,
+          tokensOut: respuesta.turno.tokensOut,
+          validadorOk: respuesta.turno.validadorOk,
         },
       },
     });
   } catch (e: unknown) {
+    if (e instanceof ErrorSesion) return error(e.codigo, e.message, e.estadoHttp);
     const mensaje = e instanceof Error ? e.message : "Error interno";
     return error("SERVER_ERROR", mensaje, 500);
   }

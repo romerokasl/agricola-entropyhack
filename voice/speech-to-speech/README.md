@@ -2,9 +2,11 @@
 
 Workspace de este enfoque. Ver el contrato compartido y qué NO se duplica en
 [`../README.md`](../README.md) antes de escribir código acá — en particular:
-mismas tools, mismo schema de datos, mismo validador aplicado siempre, y el campo
-`voice_mode: 'speech_to_speech'` en cada turno para que el dashboard compare ambos
-enfoques con datos reales.
+mismas tools, mismo schema de datos, mismo validador aplicado siempre, y
+`canal: 'voz'` + `modo_voz: 's2s'` en cada conversación para que el dashboard compare
+ambos enfoques con datos reales. *(El campo `voice_mode: 'speech_to_speech'` que este
+archivo nombraba antes nunca existió en el esquema: la versión vigente del contrato
+está en `../README.md` y se implementa en `lib/agent/sesion.ts`.)*
 
 ## Alcance de esta carpeta
 
@@ -31,3 +33,19 @@ texto — todo eso vive en el código global (ver contrato en `../README.md`).
   ¿function calling intermedio que fuerza una pausa?)
 - Cómo se decide el resultado si el validador detecta una violación a mitad de
   la respuesta hablada
+
+---
+
+## Punto de entrada
+
+La lógica de conversación es compartida y no se reimplementa acá: `lib/agent/sesion.ts`
+expone `iniciarConversacion` / `continuarConversacion`, que ya traen la señal de riesgo,
+la escalera, el validador y la persistencia. Este enfoque las llama con
+`canal: "voz"` y `modoVoz: "s2s"`; lo propio de esta carpeta es el transporte de audio.
+
+El ejemplo de uso está en [`../pipeline/README.md`](../pipeline/README.md) y el detalle
+de la señal de riesgo en [`../../docs/senal-de-riesgo.md`](../../docs/senal-de-riesgo.md).
+
+⚠️ El contrato compartido exige que **el validador determinista corra siempre**. En S2S
+no hay un punto natural donde meterlo entre el modelo y el parlante: resolver eso es
+parte del alcance de esta carpeta, y es el argumento que el jurado va a examinar.
