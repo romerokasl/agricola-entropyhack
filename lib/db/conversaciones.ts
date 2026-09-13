@@ -82,7 +82,7 @@ function aConversacion(fila: FilaConversacion): Conversacion {
   };
 }
 
-function tieneSupabase(): boolean {
+export function tieneSupabase(): boolean {
   return Boolean(
     process.env.SUPABASE_SERVICE_ROLE_KEY &&
       process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -90,9 +90,9 @@ function tieneSupabase(): boolean {
   );
 }
 
-const memoriaConversaciones = new Map<string, Conversacion>();
-const memoriaTurnos = new Map<string, Array<{ id: string; rol: RolTurno; texto: string; metricas?: MetricasTurno }>>();
-const memoriaAcuerdos = new Map<string, unknown>();
+export const memoriaConversaciones = new Map<string, Conversacion>();
+export const memoriaTurnos = new Map<string, Array<{ id: string; rol: RolTurno; texto: string; metricas?: MetricasTurno }>>();
+export const memoriaAcuerdos = new Map<string, unknown>();
 
 export async function crearConversacion(params: {
   clienteId: string;

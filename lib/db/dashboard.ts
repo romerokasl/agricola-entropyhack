@@ -7,7 +7,8 @@ import type {
   TurnoDetalle,
   TurnoMetricasFila,
 } from "../dashboard/types";
-import { aCliente, COLUMNAS_CLIENTE, obtenerClientePorId, type FilaCliente } from "./clientes";
+import { aCliente, CLIENTES_FALLBACK, COLUMNAS_CLIENTE, obtenerClientePorId, type FilaCliente } from "./clientes";
+import { memoriaAcuerdos, memoriaConversaciones, memoriaTurnos, tieneSupabase } from "./conversaciones";
 import { conReintentos } from "./reintentos";
 
 /**
@@ -137,6 +138,56 @@ function aAcuerdo(f: FilaAcuerdo): AcuerdoFila {
 // --- Consultas -------------------------------------------------------------------
 
 export async function leerDatosDashboard(): Promise<DatosDashboard> {
+  if (!tieneSupabase()) {
+    const clientes = Object.values(CLIENTES_FALLBACK);
+    const conversaciones: ConversacionFila[] = Array.from(memoriaConversaciones.values()).map((c) => ({
+      id: c.id,
+      clienteId: c.clienteId,
+      canal: c.canal,
+      apertura: c.apertura,
+      estado: c.estado,
+      iniciadaEn: new Date().toISOString(),
+      cerradaEn: c.estado === "abierta" ? null : new Date().toISOString(),
+    }));
+    const turnos: TurnoMetricasFila[] = [];
+    for (const [convId, lista] of memoriaTurnos.entries()) {
+      lista.forEach((t, idx) => {
+        turnos.push({
+          conversacionId: convId,
+          indice: idx,
+          rol: t.rol,
+          creadoEn: new Date().toISOString(),
+          latenciaMs: t.metricas?.latenciaMs ?? null,
+          tokensIn: null,
+          tokensOut: null,
+          validadorOk: t.metricas?.validadorOk ?? true,
+          validadorMotivo: null,
+          modeloVersion: "llama3.1",
+        });
+      });
+    }
+    const acuerdos: AcuerdoFila[] = [];
+    for (const [convId, ac] of memoriaAcuerdos.entries()) {
+      const a = ac as {
+        escalon?: number;
+        tipo?: string;
+        monto?: number | string;
+        fechaAcordada?: string;
+        motivo?: string;
+      };
+      acuerdos.push({
+        conversacionId: convId,
+        escalon: a.escalon ?? null,
+        tipo: a.tipo ?? null,
+        monto: a.monto ? Number(a.monto) : null,
+        fechaAcordada: a.fechaAcordada ?? null,
+        motivoNoAcuerdo: a.motivo ?? null,
+        creadoEn: new Date().toISOString(),
+      });
+    }
+    return { clientes, conversaciones, turnos, acuerdos };
+  }
+
   const db = getSupabaseAdmin();
 
   // El orden explícito hace estable la paginación: sin él, dos páginas pueden repetir
@@ -178,6 +229,59 @@ export interface DatosDetalle {
 
 /** `null` si la conversación no existe. El id tiene que venir ya validado como UUID. */
 export async function leerDetalleConversacion(id: string): Promise<DatosDetalle | null> {
+  if (!tieneSupabase()) {
+    const conv = memoriaConversaciones.get(id);
+    if (!conv) return null;
+    const cliente = (await obtenerClientePorId(conv.clienteId)) ?? null;
+    const listaTurnos = memoriaTurnos.get(id) ?? [];
+    const turnos: TurnoDetalle[] = listaTurnos.map((t, idx) => ({
+      conversacionId: id,
+      indice: idx,
+      rol: t.rol,
+      creadoEn: new Date().toISOString(),
+      latenciaMs: t.metricas?.latenciaMs ?? null,
+      tokensIn: null,
+      tokensOut: null,
+      validadorOk: t.metricas?.validadorOk ?? true,
+      validadorMotivo: null,
+      modeloVersion: "llama3.1",
+      texto: t.texto,
+    }));
+    const rawAcuerdo = memoriaAcuerdos.get(id) as
+      | {
+          escalon?: number;
+          tipo?: string;
+          monto?: number | string;
+          fechaAcordada?: string;
+          motivo?: string;
+        }
+      | undefined;
+    const acuerdo: AcuerdoFila | null = rawAcuerdo
+      ? {
+          conversacionId: id,
+          escalon: rawAcuerdo.escalon ?? null,
+          tipo: rawAcuerdo.tipo ?? null,
+          monto: rawAcuerdo.monto ? Number(rawAcuerdo.monto) : null,
+          fechaAcordada: rawAcuerdo.fechaAcordada ?? null,
+          motivoNoAcuerdo: rawAcuerdo.motivo ?? null,
+          creadoEn: new Date().toISOString(),
+        }
+      : null;
+    return {
+      conversacion: {
+        id: conv.id,
+        clienteId: conv.clienteId,
+        canal: conv.canal,
+        apertura: conv.apertura,
+        estado: conv.estado,
+        iniciadaEn: new Date().toISOString(),
+        cerradaEn: conv.estado === "abierta" ? null : new Date().toISOString(),
+      },
+      cliente,
+      turnos,
+      acuerdo,
+    };
+  }
   const db = getSupabaseAdmin();
 
   const conversacion = await conReintentos(`No se pudo leer la conversación ${id}`, async () => {

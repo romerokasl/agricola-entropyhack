@@ -51,7 +51,7 @@ export function aCliente(fila: FilaCliente): Cliente {
   };
 }
 
-const CLIENTES_FALLBACK: Record<string, Cliente> = {
+export const CLIENTES_FALLBACK: Record<string, Cliente> = {
   karla: {
     id: "00000000-0000-0000-0000-000000000001",
     slug: "karla",
