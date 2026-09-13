@@ -69,6 +69,25 @@ usado en `voice/pipeline/docs/model-selection.md`):
 | **2** | **Groq (Llama 3.3 70B u otro open-weight)** | $0 permanente | Respaldo si Gemini se queda sin cupo en pleno demo. ~30 req/min, ~14,400 req/día, muy rápido. Tool-calling algo menos confiable que Gemini. |
 | **3 — última opción** | **Ollama local (Llama/Mistral en la laptop)** | $0, sin límite | Solo para probar/demostrar el escenario sin red (`02-decisiones-y-plan.md`: *"probar el modo sin red temprano"*). Calidad de español y de tool-calling notablemente menor — no usar como opción principal. |
 
+### 📌 Cambio del 13 de septiembre: Ollama es el default **de desarrollo**, no del demo
+
+El código (`lib/agent/llm.ts`) ya implementa Ollama y `LLM_PROVIDER` **por defecto vale
+`ollama`**. Eso no contradice la tabla de arriba, la complementa: la cuota de 20
+peticiones/día/modelo hace imposible iterar contra Gemini, así que el desarrollo corre
+local y sin límite, y **el demo sigue siendo Gemini Flash** (`LLM_PROVIDER=gemini`, una
+línea de `.env.local`).
+
+Dos reglas que salen de eso:
+
+1. **El modelo local tiene que caber completo en VRAM, no en RAM.** Medido en la laptop
+   de desarrollo: `llama3.1:8b` (5.6 GB) contra una RTX 3050 de 4 GB reparte 58 % a CPU y
+   tarda **94 s por turno**; `qwen2.5:3b` corre 100 % en GPU y tarda **756 ms** — 124×.
+   Verificalo con `ollama ps`: la columna PROCESSOR debe decir `100% GPU`. Detalle en
+   [`voice/pipeline/docs/plan-implementacion.md`](../../voice/pipeline/docs/plan-implementacion.md) §2.
+2. **Lo que se valide contra Ollama se revalida contra el modelo del demo.** En esa misma
+   medición el modelo respondió con tuteo en vez de voseo y ofreció una opción que no
+   está en la escalera.
+
 ⚠️ **Correr la batería de 20 ataques sobre el modelo gratuito que efectivamente se
 use.** Un modelo más chico tiene más probabilidad de filtrar jerga prohibida o de mal
 formar un argumento de tool que un modelo de frontera pago.

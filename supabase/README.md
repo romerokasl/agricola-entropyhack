@@ -88,9 +88,19 @@ versionado es la fuente de verdad, el editor solo lo ejecuta.
 ### B. Desde Node, sin psql (Windows-friendly)
 
 ```bash
-npm run db:migrate   # aplica supabase/migrations/ en orden
+npm run db:migrate   # aplica las migraciones que falten, en orden
 npm run seed:apply   # siembra los 308 clientes
 ```
+
+`db:migrate` lleva registro en la tabla `_migraciones` y **se puede correr las veces que
+haga falta**: aplica solo lo que falta y cada archivo va en su propia transacción.
+
+> Antes reejecutaba todos los archivos en cada corrida, y como el primero crea las
+> tablas sin `if not exists`, fallaba ahí y **nunca llegaba a las migraciones nuevas**.
+> Eso dejó sin aplicar la migración de señal de riesgo mientras el código ya escribía
+> esas columnas: toda conversación fallaba y parecía "Supabase caído" cuando era desfase
+> de esquema. Si tu base ya existía antes de la tabla de control, la primera corrida
+> **adopta** la migración base (la da por aplicada sin ejecutarla) y sigue con el resto.
 
 `seed:apply` usa la API REST y funciona siempre. **`db:migrate` necesita un
 `DATABASE_URL` que resuelva**, y ahí está el detalle importante:

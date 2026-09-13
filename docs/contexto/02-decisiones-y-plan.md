@@ -290,13 +290,12 @@ técnico más elegante.
    tiene cierta rigidez y sigue una ruta de conversación específica."*
 2. **La persona (20 s).** Karla, 27, Soyapango. Cobra el 15 y el 30. Su cuota vence el 8.
    Paga tarde todos los meses sin ser mala pagadora: el calendario está mal armado.
-3. **La tesis (15 s).** *"No es un cobrador. Es una conversación que protege el récord de
-   la persona. El pago llega como consecuencia."*
+3. **La tesis y los 3 diferenciadores (20 s).** *"No es solo un cobrador. Es Anticipa Bancoagrícola: (1) Precisión auditable ante la SSF con explicabilidad SHAP, (2) Cobranza empática que orquesta productos reales del banco, y (3) Rentabilidad activa: monetizamos a clientes sanos con cross-selling y up-selling, convirtiendo la prevención en ingresos."*
 4. **El demo (90 s).** La conversación completa con Karla: comprender → detectar la
    desalineación → proponer mover la fecha → cerrar → **mostrar el registro**.
 5. **La prueba de control (20 s).** Pedile al jurado que intente romperlo. O rompelo vos
    delante de ellos y mostrá cómo responde. **Esto es lo que nadie más va a hacer.**
-6. **El dashboard (20 s).** % de cierre, mora evitada, latencia p95, costo en tokens.
+6. **El dashboard (20 s).** % de cierre, mora evitada, provisiones liberadas NCB-022, conversión comercial Tier A, latencia p95 y costo en tokens.
 7. **El cierre (15 s).** *"Corre sobre los canales que ya tienen, usa los productos que
    ya venden, y el tono empático además es cumplimiento de la Ley de Protección al
    Consumidor."*
@@ -305,6 +304,9 @@ técnico más elegante.
 
 - ¿Cómo controlan las alucinaciones? → prompt + temperatura 0.2 + **validador
   determinista** + reglas en código, no en el prompt
+- ¿El modelo es auditable ante la SSF? → **100 % auditable**: usamos modelos de caja blanca / interpretabilidad con **SHAP (TreeExplainer)**. Cada intervención tiene registrados los 3 factores matemáticos de estrés que la justificaron.
+- ¿Cómo monetizan si es un sistema de cobranza? → **Rentabilidad Activa**: filtramos a los clientes con deuda saldada o 0 mora (**Tier A Prime**) y disparamos ofertas oportunas de cross-selling y up-selling (Adelanto de Salario, Extrafinanciamiento limpio, upgrade de tarjeta).
+- ¿Qué hacen con la mora grave (+120 días, Tier D y E)? → La probabilidad de recuperación automática decae fuertemente. El bot emite recordatorio formal y **reduce el esfuerzo de rescate automatizado, derivando de inmediato a un ejecutivo humano** para gestión personalizada o cobranza especializada.
 - ¿Local o API, y qué pasa con los datos? → ver decisión #3
 - ¿Y quien no tiene smartphone? → **Don Tito**: SMS + corresponsal
 - ¿No están canibalizando los intereses de mora? → *el interés de mora es ingreso de baja

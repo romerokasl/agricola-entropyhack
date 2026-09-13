@@ -16,6 +16,8 @@ export type EstadoConversacion =
   | "cerrada_sin_acuerdo"
   | "escalada_humano";
 
+export type TipoCierre = "acuerdo" | "no_acuerdo";
+
 export interface Cliente {
   id: string;
   slug: string;
@@ -60,10 +62,24 @@ export interface Turno {
 }
 
 export interface MetricasTurno {
+  /**
+   * Round-trip completo del turno. Es el campo común con speech-to-speech: el dashboard
+   * compara los dos enfoques por acá, sin casos especiales.
+   */
   latenciaMs: number;
   tokensIn: number | null;
   tokensOut: number | null;
   validadorOk: boolean;
   validadorMotivo: string | null;
   modeloVersion: string;
+
+  /**
+   * Desglose por etapa del pipeline. Es el extra que solo la cascada puede dar: en S2S
+   * la latencia es una caja negra de un solo número. Nulos en el canal de texto, que no
+   * tiene etapas de audio.
+   */
+  latenciaSttMs?: number | null;
+  latenciaLlmMs?: number | null;
+  latenciaValidadorMs?: number | null;
+  latenciaTtsMs?: number | null;
 }

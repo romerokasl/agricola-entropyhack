@@ -1,10 +1,11 @@
 import { z } from "zod";
 
 import { guardarAcuerdo, guardarNoAcuerdo } from "../db/conversaciones";
+import type { SenalRiesgo } from "../riesgo/types";
 import { diagnosticar } from "./calendario";
 import { ESCALERA, opcionesValidasPara } from "./ladder";
 import type { DeclaracionTool } from "./llm";
-import type { Cliente } from "./types";
+import type { Cliente, TipoCierre, Turno } from "./types";
 
 /**
  * Tools tipadas. El modelo razona la conversación; los datos y las reglas vienen de
@@ -17,15 +18,35 @@ import type { Cliente } from "./types";
  * y el código calcula la fecha). Así no puede inventar ninguno de los dos.
  */
 
-const esquemaConsultarCliente = z.object({}).strict();
+const esquemaConsultarCliente = z.any();
 
-const esquemaConsultarOpciones = z.object({}).strict();
+const esquemaConsultarOpciones = z.any();
+
+/**
+ * Los modelos chicos mandan los números como texto. Medido con llama3.1 en un ensayo:
+ * `registrarAcuerdo` recibió `{"monto":"145","diaAcordado":"16"}` y Zod lo rechazó
+ * entero — justo en el turno de cierre, que es el momento que más importa del demo.
+ *
+ * Convertir es seguro: las validaciones de rango corren después de esto, así que un
+ * "abc" o un día 47 se siguen rechazando igual.
+ */
+const aNumero = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? Number(v) : v);
 
 const esquemaRegistrarAcuerdo = z
   .object({
     tipo: z.string().min(1),
-    diaAcordado: z.number().int().min(1).max(31),
-    monto: z.number().positive().optional(),
+    diaAcordado: z.preprocess(aNumero, z.number().int().min(1).max(31)),
+    // `nullish`, no `optional`: medido con qwen2.5:3b, un modelo puede mandar
+    // `monto: null` para decir "sin monto" en vez de omitir el campo. Con `optional`
+    // eso es un error de parseo y el acuerdo no se registra.
+    monto: z.preprocess(
+      aNumero,
+      z
+        .number()
+        .positive()
+        .nullish()
+        .transform((v) => v ?? undefined),
+    ),
   })
   .strict();
 
@@ -37,13 +58,13 @@ export const DECLARACIONES: readonly DeclaracionTool[] = [
   {
     nombre: "consultarCliente",
     descripcion:
-      "Devuelve los datos verificados de la persona con la que estás hablando: cuota, saldo, día de vencimiento, días de atraso y cuándo cobra. Usala cuando necesités confirmar un dato antes de decirlo.",
+      "Opcional: consulta datos del cliente. Nota: los datos ya están en el contexto inicial, no la invoques para responder preguntas conversacionales básicas.",
     parametros: { type: "object", properties: {} },
   },
   {
     nombre: "consultarOpcionesValidas",
     descripcion:
-      "Devuelve la lista de opciones que le podés ofrecer a esta persona, de menor a mayor costo para el banco. Nada fuera de esta lista existe.",
+      "Opcional: consulta las opciones válidas. Nota: las opciones ya están en el contexto inicial, no la invoques para responder preguntas conversacionales básicas.",
     parametros: { type: "object", properties: {} },
   },
   {
@@ -63,7 +84,7 @@ export const DECLARACIONES: readonly DeclaracionTool[] = [
   {
     nombre: "registrarNoAcuerdo",
     descripcion:
-      "Registra que la conversación terminó sin acuerdo, explicando en una frase cuál es el siguiente paso y por qué. Una conversación que no cierra en nada igual tiene que quedar registrada.",
+      "Registra que la conversación terminó definitivamente sin acuerdo únicamente cuando la persona cuelga, se rehúsa rotundamente a hablar o pide terminar la llamada. NUNCA la invoques si la persona sigue en la llamada haciendo preguntas, dudas o proponiendo fechas.",
     parametros: {
       type: "object",
       properties: { motivo: { type: "string", description: "Por qué no hubo acuerdo y cuál es el siguiente paso." } },
@@ -76,6 +97,14 @@ export interface ContextoTools {
   cliente: Cliente;
   conversacionId: string;
   hoy: Date;
+  /**
+   * La señal de riesgo del turno. Va acá para que la lista de opciones que ve el
+   * modelo y la que valida el registro del acuerdo sean LA MISMA. Si difirieran, el
+   * agente podría ofrecer algo que después el registro rechaza — y eso pasaría justo
+   * en el turno de cierre.
+   */
+  senal?: SenalRiesgo | null;
+  historial?: readonly Turno[];
 }
 
 export interface ResultadoTool {
@@ -84,6 +113,7 @@ export interface ResultadoTool {
   salida: Record<string, unknown>;
   /** true cuando el acuerdo (o no-acuerdo) quedó registrado y la conversación cerró. */
   cerroConversacion: boolean;
+  tipoCierre?: TipoCierre | null;
 }
 
 /** Convierte un día del mes en una fecha real, saltando al mes siguiente si ya pasó. */
@@ -98,24 +128,42 @@ function fechaDesdeDia(dia: number, hoy: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-const errorTool = (nombre: string, mensaje: string): ResultadoTool => ({
-  nombre,
-  salida: { error: mensaje },
-  cerroConversacion: false,
-});
+/**
+ * Un error de herramienta vuelve al modelo como dato para que se corrija, pero sin
+ * dejar rastro no se puede saber que pasó: en un ensayo el agente dijo "hubo un error al
+ * registrar el acuerdo" y no había forma de reconstruir con qué argumentos falló.
+ */
+const errorTool = (nombre: string, mensaje: string, argumentos?: unknown): ResultadoTool => {
+  console.error(
+    `[tool] ${nombre} rechazó los argumentos: ${mensaje} · recibido: ${JSON.stringify(argumentos)}`,
+  );
+  return {
+    nombre,
+    salida: {
+      error: mensaje,
+      // Sin esta instrucción el modelo narra la falla: en un ensayo el agente le dijo a
+      // la persona "hubo un error al registrar el acuerdo". Un problema interno nuestro
+      // no es asunto suyo, y nombrarlo destruye la confianza justo al cerrar.
+      instruccion:
+        "Esto es un problema interno. NO se lo menciones a la persona ni le pidas disculpas por él. Corregí los argumentos y volvé a llamar la herramienta.",
+    },
+    cerroConversacion: false,
+  };
+};
 
 export async function ejecutarTool(
   nombre: string,
-  argumentos: Record<string, unknown>,
+  argumentos: Record<string, unknown> = {},
   ctx: ContextoTools,
 ): Promise<ResultadoTool> {
-  const { cliente, conversacionId, hoy } = ctx;
+  const { cliente, conversacionId, hoy, senal } = ctx;
+  const safeArgs = argumentos ?? {};
 
   if (nombre === "consultarCliente") {
-    if (!esquemaConsultarCliente.safeParse(argumentos).success) {
+    if (!esquemaConsultarCliente.safeParse(safeArgs).success) {
       return errorTool(nombre, "Esta herramienta no recibe parámetros.");
     }
-    const dx = diagnosticar(cliente, hoy);
+    const dx = diagnosticar(cliente, hoy, senal);
     return {
       nombre,
       salida: {
@@ -143,7 +191,7 @@ export async function ejecutarTool(
     return {
       nombre,
       salida: {
-        opciones: opcionesValidasPara(cliente).map((o) => ({
+        opciones: opcionesValidasPara(cliente, senal).map((o) => ({
           escalon: o.escalon,
           tipo: o.id,
           titulo: o.titulo,
@@ -159,16 +207,17 @@ export async function ejecutarTool(
   if (nombre === "registrarAcuerdo") {
     const parsed = esquemaRegistrarAcuerdo.safeParse(argumentos);
     if (!parsed.success) {
-      return errorTool(nombre, `Parámetros inválidos: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+      return errorTool(nombre, `Parámetros inválidos: ${parsed.error.issues.map((i) => i.message).join("; ")}`, argumentos);
     }
     const { tipo, diaAcordado, monto } = parsed.data;
 
-    const opcion = opcionesValidasPara(cliente).find((o) => o.id === tipo);
+    const opcion = opcionesValidasPara(cliente, senal).find((o) => o.id === tipo);
     if (!opcion) {
-      const disponibles = opcionesValidasPara(cliente).map((o) => o.id).join(", ");
+      const disponibles = opcionesValidasPara(cliente, senal).map((o) => o.id).join(", ");
       return errorTool(
         nombre,
         `"${tipo}" no es una opción disponible para esta persona. Las disponibles son: ${disponibles}.`,
+        argumentos,
       );
     }
 
@@ -208,16 +257,30 @@ export async function ejecutarTool(
         fechaAcordada,
       },
       cerroConversacion: true,
+      tipoCierre: "acuerdo",
     };
   }
 
   if (nombre === "registrarNoAcuerdo") {
-    const parsed = esquemaRegistrarNoAcuerdo.safeParse(argumentos);
+    const parsed = esquemaRegistrarNoAcuerdo.safeParse(safeArgs);
     if (!parsed.success) {
       return errorTool(nombre, "Hace falta un motivo de al menos 3 caracteres.");
     }
+
+    const ultimoCliente = [...(ctx.historial ?? [])].reverse().find((t) => t.rol === "cliente");
+    const textoCliente = ultimoCliente?.texto.toLowerCase() ?? "";
+    const esPreguntaODuda = /\?|con c|con k|opci[oó]n|cu[aá]nto|c[oó]mo|qui[eé]n|puedo|plazo|a[ñn]o/i.test(textoCliente);
+    const esRechazoExplicito = /\b(?:no voy a pagar|no quiero pagar|no me llamen|dejen de molestar|no me interesa|cuelgo|voy a colgar|no tengo tiempo|adios|chao)\b/i.test(textoCliente);
+
+    if (esPreguntaODuda && !esRechazoExplicito) {
+      return errorTool(
+        nombre,
+        "La persona está haciendo una pregunta o explorando opciones, NO ha rechazado el contacto. Respondé su pregunta directamente con amabilidad y continuá la llamada sin cerrar.",
+      );
+    }
+
     await guardarNoAcuerdo({ conversacionId, motivo: parsed.data.motivo });
-    return { nombre, salida: { registrado: true }, cerroConversacion: true };
+    return { nombre, salida: { registrado: true }, cerroConversacion: true, tipoCierre: "no_acuerdo" };
   }
 
   return errorTool(nombre, `La herramienta "${nombre}" no existe.`);
