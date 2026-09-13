@@ -22,8 +22,14 @@ import {
   fechaSugeridaAlineada,
 } from "../lib/agent/calendario";
 import { esPlazoValido, opcionesValidasPara } from "../lib/agent/ladder";
+import { construirContexto } from "../lib/agent/prompt";
 import type { Cliente } from "../lib/agent/types";
 import { validar } from "../lib/agent/validator";
+import { senalSinRed } from "../lib/riesgo";
+import { derivarFeatures } from "../lib/riesgo/features";
+import { puntuarReglas } from "../lib/riesgo/reglas";
+import { consultarModelo } from "../lib/riesgo/servicio";
+import type { SenalRiesgo } from "../lib/riesgo/types";
 
 /** Fecha fija: si dependiera de "hoy", la verificación fallaría según el día. */
 const HOY = new Date(2026, 8, 12); // 12 de septiembre de 2026
@@ -67,9 +73,14 @@ const marta: Cliente = {
 
 const critico: Cliente = { ...base, slug: "critico", diasAtraso: 22, riesgoBanda: "CRITICAL" };
 
+/** Fuerza una banda concreta sobre una señal real, para probar cómo reacciona el resto. */
+function conBanda(cliente: Cliente, banda: SenalRiesgo["banda"], score: number): SenalRiesgo {
+  return { ...senalSinRed(cliente, HOY), banda, score };
+}
+
 // ---------------------------------------------------------------------------
 
-const pruebas: Array<[string, () => void]> = [
+const pruebas: Array<[string, () => void | Promise<void>]> = [
   // --- Calendario ---------------------------------------------------------
   ["Karla: se detecta la desalineación de quincena", () => {
     assert.equal(diagnosticar(karla, HOY).motivo, "desalineacion_quincena");
@@ -191,19 +202,199 @@ const pruebas: Array<[string, () => void]> = [
     });
     assert.equal(r.motivo, "demasiadas_exclamaciones");
   }],
+
+  // --- Señal de riesgo: composición ---------------------------------------
+  ["La señal es el máximo de las vistas, no su promedio", () => {
+    // Reglas altas (desalineación) y score de lote bajo: promediar la escondería.
+    const desalineadoConScoreBajo: Cliente = { ...karla, riesgoScore: 10, riesgoBanda: "LOW" };
+    const senal = senalSinRed(desalineadoConScoreBajo, HOY);
+    assert.equal(senal.componenteReglas, 58);
+    assert.equal(senal.componenteRegistro, 10);
+    assert.equal(senal.score, 58);
+    assert.equal(senal.fuente, "reglas");
+  }],
+  ["El score de lote se conserva aunque las reglas locales no vean nada", () => {
+    // Sandra: calendario alineado y sin atraso. Lo que la hace interesante (liquidez
+    // apretada) solo lo ve el proceso de lote. Si se descartara, nadie la contactaría.
+    const sandra: Cliente = {
+      ...base, slug: "sandra", producto: "Crédito personal", cuota: 210, saldo: 1680,
+      diaPago: 20, riesgoScore: 56, riesgoBanda: "MODERATE_HIGH",
+    };
+    const senal = senalSinRed(sandra, HOY);
+    assert.equal(senal.fuente, "score_registrado");
+    assert.equal(senal.banda, "MODERATE_HIGH");
+    assert.equal(diagnosticar(sandra, HOY, senal).motivo, "riesgo_alto");
+  }],
+  ["Karla: la señal sugiere empezar por mover la fecha (escalón 2)", () => {
+    assert.equal(senalSinRed(karla, HOY).escalonSugerido, 2);
+  }],
+  ["Sin desalineación, el escalón sugerido es el más barato de todos", () => {
+    assert.equal(senalSinRed(wilber, HOY).escalonSugerido, 1);
+  }],
+
+  // --- Señal de riesgo: qué NO puede hacer --------------------------------
+  ["CONTROL — la señal viva tampoco hace que se contacte a Marta", () => {
+    const senal = senalSinRed(marta, HOY);
+    assert.equal(senal.banda, "LOW");
+    assert.equal(diagnosticar(marta, HOY, senal).motivo, null);
+    assert.equal(debeContactar(marta, HOY, senal), false);
+  }],
+  ["Una señal baja NO puede apagar un contacto que los datos duros justifican", () => {
+    // El orden de los motivos importa: atraso y desalineación se evalúan antes.
+    assert.equal(diagnosticar(wilber, HOY, conBanda(wilber, "LOW", 5)).motivo, "atraso");
+    assert.equal(
+      diagnosticar(karla, HOY, conBanda(karla, "LOW", 5)).motivo,
+      "desalineacion_quincena",
+    );
+  }],
+  ["Una señal alta NO puede inventar opciones fuera de la escalera", () => {
+    const ids = opcionesValidasPara(marta, conBanda(marta, "CRITICAL", 90)).map((o) => o.id);
+    // Sube el riesgo al máximo y aun así no aparece nada que no le aplique a Marta.
+    assert.ok(!ids.includes("mover_fecha"));
+    assert.ok(!ids.includes("debito_automatico"));
+    assert.ok(ids.every((id) => typeof id === "string"));
+  }],
+  ["Solo una señal CRITICAL desbloquea la reestructura", () => {
+    const conCritical = opcionesValidasPara(karla, conBanda(karla, "CRITICAL", 90));
+    assert.ok(conCritical.map((o) => o.id).includes("reestructura"));
+    const conAlta = opcionesValidasPara(karla, conBanda(karla, "MODERATE_HIGH", 62));
+    assert.ok(!conAlta.map((o) => o.id).includes("reestructura"));
+  }],
+
+  // --- Señal de riesgo: no se filtra al prompt -----------------------------
+  ["El contexto no contiene el puntaje, la banda ni jerga de riesgo", () => {
+    const contexto = construirContexto(karla, "agente", HOY, senalSinRed(karla, HOY));
+    for (const prohibido of ["MODERATE_HIGH", "CRITICAL", "scorer", "score", "banda", "62"]) {
+      assert.ok(!contexto.includes(prohibido), `el contexto contiene "${prohibido}"`);
+    }
+  }],
+  ["Al prompt solo llegan los factores escritos por nosotros, no los del modelo", () => {
+    const senal: SenalRiesgo = {
+      ...senalSinRed(karla, HOY),
+      factores: [
+        { origen: "reglas", factor: "La cuota vence antes de la quincena" },
+        { origen: "modelo", factor: "Utilización de línea de crédito alta (+27%)" },
+      ],
+    };
+    const contexto = construirContexto(karla, "agente", HOY, senal);
+    assert.ok(contexto.includes("La cuota vence antes de la quincena"));
+    assert.ok(!contexto.includes("Utilización de línea de crédito"));
+  }],
+  ["El motivo de riesgo preventivo no le da al agente una razón que inventar", () => {
+    const preventivo: Cliente = { ...base, diaPago: 20, riesgoScore: 60, riesgoBanda: "MODERATE_HIGH" };
+    const dx = diagnosticar(preventivo, HOY, senalSinRed(preventivo, HOY));
+    assert.equal(dx.motivo, "riesgo_alto");
+    assert.ok(!dx.detalle.toLowerCase().includes("score"));
+    assert.ok(!dx.detalle.includes("MODERATE_HIGH"));
+  }],
+
+  // --- Adaptador de features ----------------------------------------------
+  ["La desalineación estructural se traduce en atrasos del semestre", () => {
+    // 12 fallos al año = 6 por semestre. Es el insight local hecho feature.
+    assert.equal(derivarFeatures(karla, HOY).features.latePaymentsLast6m, 6);
+    assert.equal(derivarFeatures(marta, HOY).features.latePaymentsLast6m, 0);
+  }],
+  ["Los días hasta el vencimiento se acotan al rango que acepta el servicio", () => {
+    // ml/api.py declara daysUntilNextPayment entre 1 y 45: fuera de rango responde 422.
+    const venceHoy: Cliente = { ...base, diaPago: 12 };
+    const f = derivarFeatures(venceHoy, HOY).features;
+    assert.equal(f.daysUntilNextPayment, 1);
+    assert.ok(f.daysUntilNextPayment >= 1 && f.daysUntilNextPayment <= 45);
+  }],
+  ["Lo que no se puede observar se declara, no se inventa", () => {
+    const { noObservadas } = derivarFeatures(karla, HOY);
+    assert.ok(noObservadas.some((n) => n.startsWith("monthlyIncome")));
+    assert.ok(noObservadas.some((n) => n.startsWith("savingsDropPct")));
+  }],
+  ["El débito automático baja el componente de reglas", () => {
+    const sinDebito = puntuarReglas({ ...marta, tieneDebitoAutomatico: false }).score;
+    assert.equal(puntuarReglas(marta).score, sinDebito - 14);
+  }],
+
+  // --- El texto del modelo nunca cruza ------------------------------------
+  ["Del servicio de ML se toman los números y se descarta el texto", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          riskScore: 74,
+          riskLevel: "MODERATE_HIGH",
+          predictedArrearsClass: "A2",
+          defaultProbability: 0.74,
+          topRiskFactors: [{ factor: "Utilización alta", impact: "+27%" }],
+          // Los dos textos que el servicio redacta y que violan los guardrails:
+          // prometen algo que no existe y saltan al escalón más caro.
+          suggestedSolution: "Readecuación preventiva inmediata vía app móvil.",
+          empatheticMessage:
+            "Hemos preparado una readecuación personalizada con menor cuota y mayor plazo.",
+        },
+        meta: { modelType: "LightGBM", usedRealModel: true },
+      }),
+    })) as unknown as typeof fetch;
+
+    try {
+      const salida = await consultarModelo(derivarFeatures(karla, HOY).features);
+      assert.ok(salida !== null);
+      assert.equal(salida.score, 74);
+      assert.equal(salida.claseSSF, "A2");
+      const serializada = JSON.stringify(salida);
+      assert.ok(!serializada.includes("readecuación"));
+      assert.ok(!serializada.includes("Readecuación"));
+      assert.ok(!serializada.includes("app móvil"));
+    } finally {
+      globalThis.fetch = original;
+    }
+  }],
+  ["Si el servicio no responde, la señal sigue saliendo", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    try {
+      assert.equal(await consultarModelo(derivarFeatures(karla, HOY).features), null);
+    } finally {
+      globalThis.fetch = original;
+    }
+  }],
+
+  // --- Canal ---------------------------------------------------------------
+  ["La guía de voz solo aparece en el canal de voz", () => {
+    const senal = senalSinRed(karla, HOY);
+    assert.ok(!construirContexto(karla, "agente", HOY, senal, "texto").includes("POR TELÉFONO"));
+    assert.ok(construirContexto(karla, "agente", HOY, senal, "voz").includes("POR TELÉFONO"));
+  }],
+  ["Las opciones válidas son idénticas en texto y en voz", () => {
+    const senal = senalSinRed(karla, HOY);
+    const enTexto = construirContexto(karla, "agente", HOY, senal, "texto");
+    const enVoz = construirContexto(karla, "agente", HOY, senal, "voz");
+    for (const opcion of opcionesValidasPara(karla, senal)) {
+      assert.ok(enTexto.includes(opcion.id), `falta ${opcion.id} en texto`);
+      assert.ok(enVoz.includes(opcion.id), `falta ${opcion.id} en voz`);
+    }
+  }],
 ];
 
-let fallos = 0;
-for (const [nombre, prueba] of pruebas) {
-  try {
-    prueba();
-    console.log(`  ok   ${nombre}`);
-  } catch (e) {
-    fallos += 1;
-    console.error(`  FALLA ${nombre}`);
-    console.error(`        ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+// Envuelto en una función a propósito: hay pruebas asíncronas (las que sustituyen
+// `fetch` para verificar el borde con el servicio de ML) y `tsx` compila este archivo
+// a CommonJS, que no admite `await` de nivel superior.
+async function correr(): Promise<void> {
+  let fallos = 0;
+
+  for (const [nombre, prueba] of pruebas) {
+    try {
+      await prueba();
+      console.log(`  ok   ${nombre}`);
+    } catch (e) {
+      fallos += 1;
+      console.error(`  FALLA ${nombre}`);
+      console.error(`        ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+    }
   }
+
+  console.log(`\n${pruebas.length - fallos}/${pruebas.length} verificaciones pasaron.`);
+  process.exit(fallos === 0 ? 0 : 1);
 }
 
-console.log(`\n${pruebas.length - fallos}/${pruebas.length} verificaciones pasaron.`);
-process.exit(fallos === 0 ? 0 : 1);
+void correr();
