@@ -3,10 +3,9 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
- * Tokens de shadcn/ui (base neutral, HSL). Solo los usan los componentes de
- * `components/ui` — la consola interna del banco. El canal de WhatsApp NO los
- * usa: tiene sus propios tokens `--wa-*` más abajo, porque replicar WhatsApp
- * significa copiar SUS colores, no los de un design system.
+ * Tokens de shadcn/ui (base neutral, HSL). Consumidos por componentes de
+ * `components/ui`. La marca Bancoagrícola vive aparte en `tailwind.config.ts`.
+ * El canal de WhatsApp tiene sus propios tokens `--wa-*` más abajo.
  * ------------------------------------------------------------------------- */
 @layer base {
   :root {
@@ -75,6 +74,38 @@
   --wa-composer: #f0f2f5;      /* barra de escritura */
 }
 
+/* ---------------------------------------------------------------------------
+ * Paleta de datos del dashboard.
+ *
+ * No está elegida a ojo: la rampa ordinal se generó en OKLCH sobre el azul de
+ * marca (#003B71, H=-107°) y pasó el validador de la skill de dataviz —
+ * lightness monotónica, ΔL >= 0.06 entre pasos y extremo claro >= 2:1 contra
+ * blanco. Los colores de estado pasan separación CVD (protanopia/deuteranopia)
+ * con ΔE >= 8. El ámbar queda en 2.15:1, por debajo de 3:1: por eso TODA barra
+ * de estado lleva etiqueta y número visibles, nunca color solo.
+ * ------------------------------------------------------------------------- */
+:root {
+  /* Rampa ordinal: costo para el banco, bandas de riesgo. Claro → oscuro. */
+  --viz-ord-1: #8daed5;
+  --viz-ord-2: #4a81c0;
+  --viz-ord-3: #005ca8;
+  --viz-ord-4: #00386e;
+
+  /* Serie única (barras nominales: motivos, modelos). */
+  --viz-solo: #005ca8;
+
+  /* Estado: reservados, siempre con icono y etiqueta. */
+  --viz-ok: #1e8e3e;
+  --viz-espera: #e0a800;
+  --viz-info: #005ca8;
+  --viz-neutro: #8a8f98;
+  --viz-alerta: #dc3545;
+
+  /* Superficie de los gráficos y rejilla recesiva. */
+  --viz-surface: #ffffff;
+  --viz-track: #eef1f4;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -129,6 +160,19 @@ body {
     border-radius: 3px;
   }
   .wa-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Scrollbar discreta para las tablas largas del dashboard. */
+  .scroll-fino::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+  .scroll-fino::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+  }
+  .scroll-fino::-webkit-scrollbar-track {
     background: transparent;
   }
 }

@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: "class",
+  darkMode: ["class"],
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -25,8 +25,6 @@ const config: Config = {
         ring: "hsl(var(--ring))",
 
         // --- Tokens de WhatsApp (los consume `components/whatsapp`) ---------
-        // No son de marca Bancoagrícola a propósito: el canal es de WhatsApp,
-        // la marca vive en el avatar y en el contenido.
         wa: {
           teal: "var(--wa-teal)",
           "teal-dark": "var(--wa-teal-dark)",
@@ -41,6 +39,21 @@ const config: Config = {
           chip: "var(--wa-chip)",
           "chip-text": "var(--wa-chip-text)",
           composer: "var(--wa-composer)",
+        },
+
+        // --- Paleta de datos del dashboard (dataviz) -----------------------
+        viz: {
+          ord1: "var(--viz-ord-1)",
+          ord2: "var(--viz-ord-2)",
+          ord3: "var(--viz-ord-3)",
+          ord4: "var(--viz-ord-4)",
+          solo: "var(--viz-solo)",
+          ok: "var(--viz-ok)",
+          espera: "var(--viz-espera)",
+          info: "var(--viz-info)",
+          neutro: "var(--viz-neutro)",
+          alerta: "var(--viz-alerta)",
+          track: "var(--viz-track)",
         },
 
         // --- Marca Bancoagrícola (la consola interna y el escenario) --------
@@ -72,7 +85,6 @@ const config: Config = {
             DEFAULT: "#E2E6EA",
             light: "#EDEDED",
           },
-          // Acentos de Grupo Cibest/Bancolombia, extraídos del sitio real.
           brand: {
             green: "#00C389",
             "green-soft": "#E6F9F2",
@@ -93,9 +105,9 @@ const config: Config = {
         sans: [
           "-apple-system",
           "BlinkMacSystemFont",
-          "'Segoe UI'",
+          "Segoe UI",
           "Roboto",
-          "'Helvetica Neue'",
+          "Helvetica Neue",
           "Arial",
           "sans-serif",
         ],
@@ -104,7 +116,6 @@ const config: Config = {
         subtle: "0 2px 8px rgba(0, 0, 0, 0.04)",
         card: "0 4px 16px rgba(0, 0, 0, 0.06)",
         hover: "0 8px 24px rgba(0, 59, 113, 0.08)",
-        // Sombra exacta de las burbujas de WhatsApp.
         bubble: "0 1px 0.5px rgba(11, 20, 26, 0.13)",
         phone: "0 40px 80px -20px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.06)",
       },
@@ -134,4 +145,5 @@ const config: Config = {
   },
   plugins: [require("tailwindcss-animate")],
 };
+
 export default config;
