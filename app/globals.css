@@ -2,15 +2,133 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+ * Tokens de shadcn/ui (base neutral, HSL). Solo los usan los componentes de
+ * `components/ui` — la consola interna del banco. El canal de WhatsApp NO los
+ * usa: tiene sus propios tokens `--wa-*` más abajo, porque replicar WhatsApp
+ * significa copiar SUS colores, no los de un design system.
+ * ------------------------------------------------------------------------- */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 0 0% 83.1%;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Tokens de WhatsApp. Valores del cliente real en modo claro, para que el canal
+ * se lea como WhatsApp a primera vista (el banco lo pidió explícitamente).
+ * ------------------------------------------------------------------------- */
 :root {
-  --background: #000000;
-  --foreground: #ffffff;
+  --wa-teal: #008069;          /* barra superior */
+  --wa-teal-dark: #075e54;     /* barra de estado */
+  --wa-green: #00a884;         /* acento, botón de enviar, checks de envío */
+  --wa-blue: #53bdeb;          /* checks de "leído" */
+  --wa-out: #d9fdd3;           /* burbuja saliente (cliente) */
+  --wa-in: #ffffff;            /* burbuja entrante (agente) */
+  --wa-paper: #efe7de;         /* fondo del hilo */
+  --wa-meta: #667781;          /* hora, metadatos */
+  --wa-text: #111b21;          /* texto principal */
+  --wa-divider: #e9edef;       /* separadores dentro de burbujas */
+  --wa-chip: #ffeecd;          /* chip de aviso de cifrado */
+  --wa-chip-text: #54656f;
+  --wa-composer: #f0f2f5;      /* barra de escritura */
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  /* El teléfono se adapta al alto de la pantalla: en una laptop de 900 px un
+   * marco fijo de 812 px obliga a hacer scroll justo cuando se está presentando. */
+  .alto-demo {
+    height: clamp(600px, calc(100vh - 252px), 812px);
+  }
+  .alto-demo-marco {
+    height: calc(clamp(600px, calc(100vh - 252px), 812px) + 22px);
+  }
+
+  /* Wallpaper del hilo: garabatos propios, no el asset de WhatsApp. */
+  .wa-wallpaper {
+    background-color: var(--wa-paper);
+    background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'%3E%3Cg fill='none' stroke='%23000' stroke-opacity='0.045' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 34c0-6 5-11 11-11h20c6 0 11 5 11 11v10c0 6-5 11-11 11H33l-9 8v-8h-6z'/%3E%3Ccircle cx='104' cy='30' r='9'/%3E%3Cpath d='M100 30l3 3 6-7'/%3E%3Cpath d='M160 22l4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1z'/%3E%3Cpath d='M212 40c-4-6-13-4-13 3 0 6 8 10 13 15 5-5 13-9 13-15 0-7-9-9-13-3z'/%3E%3Cpath d='M28 96h22v18H28z'/%3E%3Cpath d='M28 96l11 9 11-9'/%3E%3Ccircle cx='96' cy='104' r='11'/%3E%3Cpath d='M96 98v7l5 3'/%3E%3Cpath d='M150 96l8 14h-16z'/%3E%3Cpath d='M196 94h24M196 102h24M196 110h16'/%3E%3Cpath d='M24 168h18v14H24zM30 168v-6a6 6 0 0112 0v6'/%3E%3Cpath d='M88 176c0-7 6-13 13-13s13 6 13 13-6 13-13 13-13-6-13-13z'/%3E%3Cpath d='M101 169v8h7'/%3E%3Cpath d='M152 164l10 6v14l-10 6-10-6v-14z'/%3E%3Cpath d='M198 162c-5 0-9 4-9 9s9 15 9 15 9-10 9-15-4-9-9-9z'/%3E%3Ccircle cx='198' cy='171' r='3'/%3E%3Cpath d='M60 212h20l-4 12H64z'/%3E%3Cpath d='M118 206l6 12h-12z'/%3E%3Cpath d='M170 210h18v12h-18zM174 210v-4h10v4'/%3E%3C/g%3E%3C/svg%3E");
+    background-repeat: repeat;
+  }
+
+  /* Cola de la burbuja. WhatsApp solo la pone en el primer mensaje del grupo. */
+  .wa-tail-in::before,
+  .wa-tail-out::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 8px;
+    height: 13px;
+    background-repeat: no-repeat;
+    background-size: 8px 13px;
+  }
+  .wa-tail-in::before {
+    left: -8px;
+    background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='13' viewBox='0 0 8 13'%3E%3Cpath d='M8 0H1.5C.2 0-.4 1.3.4 2.2L8 10z' fill='%23ffffff'/%3E%3C/svg%3E");
+  }
+  .wa-tail-out::before {
+    right: -8px;
+    background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='13' viewBox='0 0 8 13'%3E%3Cpath d='M0 0h6.5C7.8 0 8.4 1.3 7.6 2.2L0 10z' fill='%23d9fdd3'/%3E%3C/svg%3E");
+  }
+}
+
+@layer utilities {
+  /* Barra de scroll discreta, como la del cliente de escritorio. */
+  .wa-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  .wa-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+  }
+  .wa-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }

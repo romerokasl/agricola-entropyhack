@@ -86,6 +86,34 @@ El dataset está generado por `scripts/dataset.mjs` y es determinista. Las tres 
 
 > **¿Qué funciona hoy?** Ver [`docs/estado-del-agente.md`](docs/estado-del-agente.md) — el estado verificado contra Supabase y Gemini reales, con la conversación de Karla completa y lo que falta.
 
+### 2.2 bis · El canal de WhatsApp — `/demo/whatsapp`
+
+Réplica del canal tal como lo ve la persona, con la consola interna del banco al lado.
+**No necesita Supabase, ni Gemini, ni red:** corre sobre un guion en
+[`lib/demo/guion-whatsapp.ts`](lib/demo/guion-whatsapp.ts), así que sirve como respaldo
+si el demo en vivo falla.
+
+Cubre los tipos reales de la **WhatsApp Business Cloud API** — plantilla `utility` (el
+disparador fuera de la ventana de 24 h), botones de respuesta, mensaje de lista,
+`cta_url`, **WhatsApp Flow** (formulario nativo), encuesta, ubicación, documento, nota de
+voz, tarjeta de contacto, reacciones, cita y checks de entrega.
+
+| Escenario | Qué prueba |
+|---|---|
+| **Karla** | ⭐ Desalineación de quincena. Plantilla → encuesta → Flow → constancia. Escalón 2, costo $0. |
+| **Wilber** | Atrasado dentro de la ventana de buró. El agente **sube de escalón** cuando dice que no tiene saldo. |
+| **Rosa** | **Entrante:** ella escribe primero y pide ver opciones → mensaje de lista. |
+| **Marta** | **El control.** Hilo vacío: el sistema decide no contactarla. |
+
+Dos interruptores en la barra de control:
+
+- **Modo manual** — el guion se detiene en cada mensaje interactivo y espera el toque.
+  Es el modo para presentar en vivo. Apagado, se reproduce solo.
+- **Modo inspección** — etiqueta cada burbuja con su tipo de la Cloud API.
+
+Escribir cualquier cosa en la barra del teléfono dispara la **respuesta segura**: el
+agente no improvisa datos, ofrece un humano y la conversación no avanza.
+
 ### 2.3 Verificación
 
 ```bash
