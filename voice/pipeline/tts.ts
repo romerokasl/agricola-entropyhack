@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
 /**
  * Etapa TTS del pipeline: texto validado y normalizado → audio.
@@ -9,17 +10,15 @@ import { join } from "node:path";
  * una variable de entorno. Eso es lo que sostiene la frase del pitch "cambiar de
  * proveedor es cambiar un archivo", aplicada a las tres etapas y no solo al LLM.
  *
- * Primario hoy: **Piper local**. Sin cuenta, sin tarjeta y sin límite de caracteres —
- * el mismo criterio que llevó a Ollama para el LLM. Medido en la laptop de desarrollo:
- * factor de tiempo real 0.059, o sea 7.1 s de audio sintetizados en 0.42 s.
- *
- * `navegador` es el valor por defecto y no es un proveedor de servidor: significa que el
- * audio lo genera el cliente con `SpeechSynthesis`. Por eso `obtenerTtsProvider`
- * devuelve `null` ahí — la ruta omite el audio y el navegador se encarga.
+ * Proveedores:
+ * 1. **Edge TTS Neuronal**: Síntesis de ultra-alta fidelidad basada en voces neuronales
+ *    (por defecto: `es-SV-LorenaNeural` para acento salvadoreño natural, empático y cálido).
+ * 2. **Piper local**: Motor local ONNX sin conexión a internet.
+ * 3. **Navegador**: Síntesis directa en el cliente con Web Speech API.
  */
 
 export interface ResultadoTts {
-  /** WAV PCM 16 bits, mono. */
+  /** WAV PCM 16 bits mono, o MP3 24kHz estéreo/mono. */
   audio: Buffer;
   mime: string;
   latenciaMs: number;
@@ -131,14 +130,60 @@ function crearPiperProvider(): TtsProvider {
 }
 
 /**
+ * Proveedor de voz neuronal de Microsoft Edge (Azure Speech Neural Voices).
+ * Gratuito, sin credenciales, con voces altamente expresivas, cálidas y empáticas.
+ * Por defecto usa `es-SV-LorenaNeural` (Lorena - El Salvador) para entonación salvadoreña auténtica.
+ * Otras opciones válidas en TTS_VOZ: `es-SV-RodrigoNeural` (masculina SV), `es-MX-DaliaNeural` (atención al cliente clásica).
+ */
+function crearEdgeTtsProvider(): TtsProvider {
+  const voz = process.env.TTS_VOZ ?? "es-SV-LorenaNeural";
+
+  return {
+    nombre: `edge/${voz}`,
+
+    async sintetizar(texto: string): Promise<ResultadoTts> {
+      const inicio = Date.now();
+      const tts = new MsEdgeTTS();
+      await tts.setMetadata(voz, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+
+      const { audioStream } = tts.toStream(texto);
+      const trozos: Buffer[] = [];
+
+      return new Promise<ResultadoTts>((resolve, reject) => {
+        const temporizador = setTimeout(() => {
+          reject(new Error(`Edge TTS no respondió en ${TIMEOUT_MS} ms.`));
+        }, TIMEOUT_MS);
+
+        audioStream.on("data", (chunk: Buffer) => trozos.push(chunk));
+
+        audioStream.on("end", () => {
+          clearTimeout(temporizador);
+          resolve({
+            audio: Buffer.concat(trozos),
+            mime: "audio/mp3",
+            latenciaMs: Date.now() - inicio,
+          });
+        });
+
+        audioStream.on("error", (err: unknown) => {
+          clearTimeout(temporizador);
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+      });
+    },
+  };
+}
+
+/**
  * `null` significa "que hable el navegador" — no es un error ni un proveedor faltante.
- * Es el comportamiento por defecto y el que no necesita instalar nada.
+ * Si se especifica "edge" o "neural", se genera audio neuronal ultranatural en el backend.
  */
 export function obtenerTtsProvider(): TtsProvider | null {
-  const nombre = process.env.TTS_PROVIDER ?? "navegador";
+  const nombre = process.env.TTS_PROVIDER ?? "edge";
   if (nombre === "navegador") return null;
+  if (nombre === "edge" || nombre === "neural" || nombre === "msedge") return crearEdgeTtsProvider();
   if (nombre === "piper") return crearPiperProvider();
   throw new Error(
-    `TTS_PROVIDER="${nombre}" no está implementado. Valores válidos: "navegador" (SpeechSynthesis del cliente) y "piper" (local).`,
+    `TTS_PROVIDER="${nombre}" no está implementado. Valores válidos: "edge" (Neuronal El Salvador/México), "piper" (local) y "navegador" (SpeechSynthesis del cliente).`,
   );
 }

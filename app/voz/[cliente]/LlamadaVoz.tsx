@@ -98,12 +98,43 @@ function obtenerConstructorReconocedor(): ConstructorReconocedor | null {
 function elegirVoz(): SpeechSynthesisVoice | null {
   if (typeof window === "undefined" || !window.speechSynthesis) return null;
   const voces = window.speechSynthesis.getVoices();
-  const preferidas = ["es-sv", "es-419", "es-mx", "es-us", "es-co", "es-es"];
-  for (const etiqueta of preferidas) {
-    const voz = voces.find((v) => v.lang.replace("_", "-").toLowerCase() === etiqueta);
-    if (voz) return voz;
-  }
-  return voces.find((v) => v.lang.toLowerCase().startsWith("es")) ?? null;
+  if (!voces || voces.length === 0) return null;
+
+  const vocesEs = voces.filter((v) => v.lang.toLowerCase().startsWith("es"));
+  if (vocesEs.length === 0) return voces[0] ?? null;
+
+  // Sistema de puntuación para priorizar voces naturales, neuronales y empáticas,
+  // y descartar voces robóticas 'Desktop' (SAPI5 de Windows 7/10).
+  const puntuar = (v: SpeechSynthesisVoice): number => {
+    let pts = 0;
+    const n = v.name.toLowerCase();
+    const l = v.lang.replace("_", "-").toLowerCase();
+
+    // Bonificación de voces neuronales / naturales / en la nube
+    if (n.includes("natural") || n.includes("online") || n.includes("neural")) pts += 100;
+    if (n.includes("google")) pts += 85;
+    if (n.includes("enhanced") || n.includes("premium")) pts += 75;
+
+    // Voces específicas con tono cálido, empático y profesional para El Salvador / Latinoamérica
+    if (n.includes("lorena") || n.includes("dalia") || n.includes("salome") || n.includes("paloma")) pts += 60;
+    if (n.includes("jorge") || n.includes("rodrigo") || n.includes("alonso")) pts += 40;
+
+    // Dialectos preferentes
+    if (l === "es-sv") pts += 35;
+    else if (l === "es-419") pts += 30;
+    else if (l === "es-mx") pts += 25;
+    else if (l === "es-co") pts += 20;
+    else if (l === "es-us") pts += 15;
+    else if (l === "es-es") pts += 5;
+
+    // Penalización drástica para voces Desktop mecánicas (Sabina Desktop, Helena Desktop)
+    if (n.includes("desktop") || n.includes("sapi") || n.includes("espeak")) pts -= 100;
+
+    return pts;
+  };
+
+  const ordenadas = [...vocesEs].sort((a, b) => puntuar(b) - puntuar(a));
+  return ordenadas[0] ?? null;
 }
 
 /**
@@ -640,8 +671,10 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       utteranceRef.current = enunciado;
       const voz = elegirVoz();
       if (voz) enunciado.voice = voz;
-      enunciado.lang = voz?.lang ?? "es-MX";
-      enunciado.rate = 1.04;
+      enunciado.lang = voz?.lang ?? "es-SV";
+      // Cadencia natural, pausada y empática (evita tono apresurado o robótico)
+      enunciado.rate = 0.98;
+      enunciado.pitch = 1.02;
 
       let resuelto = false;
       const terminar = () => {
@@ -925,9 +958,15 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
                 Bancoagrícola
               </span>
               <h3 className="mt-1 text-xl font-bold text-white">{nombreCliente}</h3>
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-800/80 px-3 py-1 font-mono text-sm font-semibold tracking-wider text-slate-300">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                {formatoTiempo(duracion)}
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                <div className="inline-flex items-center gap-2 rounded-full bg-slate-800/80 px-3 py-1 font-mono text-sm font-semibold tracking-wider text-slate-300">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {formatoTiempo(duracion)}
+                </div>
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 backdrop-blur-sm shadow-sm">
+                  <Sparkles className="h-3 w-3 text-emerald-400" />
+                  <span>Voz: Lorena (Neuronal 🇸🇻)</span>
+                </div>
               </div>
             </div>
 

@@ -450,7 +450,25 @@ export class LlamadaRealtime {
         return;
       }
       const enunciado = new SpeechSynthesisUtterance(texto);
-      enunciado.lang = "es-MX";
+      const voces = window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("es"));
+      const mejorVoz = voces.sort((a, b) => {
+        const score = (v: SpeechSynthesisVoice) => {
+          const n = v.name.toLowerCase();
+          let p = 0;
+          if (n.includes("natural") || n.includes("online") || n.includes("neural")) p += 100;
+          if (n.includes("google")) p += 80;
+          if (n.includes("lorena") || n.includes("dalia") || n.includes("salome")) p += 50;
+          if (n.includes("desktop") || n.includes("sapi")) p -= 100;
+          return p;
+        };
+        return score(b) - score(a);
+      })[0];
+
+      if (mejorVoz) enunciado.voice = mejorVoz;
+      enunciado.lang = mejorVoz?.lang ?? "es-SV";
+      enunciado.rate = 0.98;
+      enunciado.pitch = 1.02;
+
       enunciado.onend = () => resolve();
       enunciado.onerror = () => resolve();
       this.cambiarEstado("hablando");
