@@ -97,11 +97,34 @@ Préstamos, descuentos, intereses por cobrar, arrendamiento financiero, crédito
 2. **Créditos para vivienda** (Art. 7) — préstamos para adquisición/construcción de vivienda, garantizados con hipoteca, a largo plazo.
 3. **Créditos para consumo** (Art. 8) — préstamos personales para bienes/servicios de consumo, deudor persona natural, plazo 1-6 años. **El artículo dice explícitamente: "Se considerarán además como créditos para consumo, los financiamientos a personas naturales provenientes de la utilización de tarjetas de crédito."** — es decir, Extrafinanciamiento, Adelanto de Salario, Sobregiro Elite, Crédito Personal y las tarjetas de crédito son todos **"consumo"** para efectos de esta norma. La columna que le importa al agente es siempre la de "Consumo", nunca la de "Vivienda".
 
-### ⚠️ La regla que casi nadie cita: la clasificación es del deudor, no del producto (Art. 9)
+### ⚠️ ¿Promedio o Foto del Momento? (Principio Fundamental de la Norma)
 
-> *"Los sujetos obligados para determinar la clasificación de un deudor, reunirán todas las operaciones crediticias contratadas por el deudor con dicha entidad, de modo tal que la categoría de riesgo que se le asigne sea la que corresponde al crédito con mayor riesgo de recuperación."*
+1. **No es un promedio:** La clasificación de riesgo bajo la Norma NCB-022 / NCBC-022 (fiscalizada por la SSF) **no es un promedio ponderado del pasado**. Es una **evaluación mensual ("foto del momento" o *point-in-time*) al cierre de cada mes**.
+2. **Si el cliente paga todo de golpe (sin reestructurar):** Al corte contable del mes en que la deuda queda en $0 o al día (0 días de mora), el crédito comercialmente **califica de nuevo en Categoría A1**. El banco libera inmediatamente la reserva de saneamiento.
+3. **Si el crédito fue reestructurado o refinanciado:** La norma **prohíbe** subirlo de inmediato a Categoría A. Exige un **período de prueba/cura**:
+   * Tras pagar **4 cuotas consecutivas completas**, cumple la primera fase de observación y puede ser promovido a **Categoría B**.
+   * Para volver formalmente a **Categoría A**, necesita completar entre **6 y 12 meses continuos de pagos impecables** bajo las nuevas condiciones pactadas.
+4. **La gran diferencia con el Buró (Equifax / TransUnion / InfoRed):**
+   * La clasificación NCB-022 (SSF) sirve para que el banco calcule cuánto dinero apartar en provisiones de capital (reservas líquidas).
+   * El Buró de Crédito es el registro de reputación comercial regulado por la Ley de Regulación de los Servicios de Información sobre el Historial de Crédito de las Personas (LRSIHCP). Con la reforma legal salvadoreña vigente, **al cancelar totalmente la deuda, el buró debe borrar el dato negativo a más tardar el siguiente día hábil**, apareciendo la cuenta como "Cancelada sin saldo pendiente".
 
-Esto es importante y no está reflejado hoy en `UML.md`: **la categoría de riesgo no vive por producto — vive por cliente, y es la peor de todas sus obligaciones con el banco.** Si Karla está al día en su tarjeta pero 45 días atrasada en su préstamo personal, su categoría NCB-022 completa con Bancoagrícola es la que corresponde a 45 días (categoría B en consumo), no un promedio ni la de la tarjeta. Esto también explica, con más precisión técnica, por qué Extrafinanciamiento exige "tarjeta sin mora": si hay mora en cualquier producto, la categoría del cliente ya no es A1/A2, y el estudio de crédito del nuevo producto lo va a reflejar.
+### ⚠️ Efecto Contagio y Principio de Calificación Integral del Deudor (Art. 9 y 13 NCB-022)
+
+* **Contagio Interno (Mismo Banco):** Un deudor no puede tener calificaciones dispersas para créditos sin garantía real dentro de la misma institución. Si Juan tiene un préstamo personal al día (Categoría A) y una tarjeta con 95 días de mora (Categoría C2) en Bancoagrícola, **ambos créditos se arrastran a Categoría C2**.
+* **Contagio Interbancario (Entre Bancos Distintos):** Todos los bancos alimentan mensualmente la **Central de Riesgos de la SSF**. Si el Banco A reporta al cliente en Categoría C o D, y esa deuda representa una proporción relevante de sus pasivos en el sistema (generalmente más del 20%), la NCB-022 obliga a Bancoagrícola a **reclasificar al cliente hacia la categoría más riesgosa**, a menos que su operación en Bancoagrícola cuente con garantías reales líquidas de primer orden (hipoteca con amplia cobertura o depósito a plazo pignorado). Si solicita nuevos créditos sin garantía en Bancoagrícola, serán denegados.
+
+### Resolución de Casos Prácticos de la Norma
+
+* **Caso 1: Pago total tras mora severa**
+  * *Escenario:* Juan acumuló 90 días de atraso en su tarjeta (Categoría C2). El día 15 paga el 100% de la deuda.
+  * *Reporte NCB-022 al cierre:* El banco reporta saldo $0 o Categoría A1 (0 días de mora). Bancoagrícola libera de inmediato la reserva de saneamiento del 30%.
+  * *Visibilidad en Buró:* En cuanto el banco reporta el pago, el buró retira el reporte negativo al siguiente día hábil.
+* **Caso 2: Reestructuración con cuota reducida**
+  * *Escenario:* María tiene cuota de $300, cae en Categoría C y el banco le aprueba reestructurar a $120. Paga puntual 4 meses seguidos.
+  * *Estatus:* No pasa a A. Pasa a Categoría B. Para regresar a A requiere entre 6 y 12 meses continuos de pago impecable.
+* **Caso 3: Crédito multientidad**
+  * *Escenario:* Carlos tiene su hipoteca al día en Bancoagrícola, pero dejó de pagar un crédito de consumo en otro banco.
+  * *Impacto en Bancoagrícola:* Si la hipoteca cuenta con garantía hipotecaria de primer orden que cubra el saldo, Bancoagrícola puede mantener la hipoteca en Categoría A (Art. 14-16). Pero si solicita una tarjeta de crédito, extrafinanciamiento o crédito quirografario en Bancoagrícola, será denegado o calificado con la categoría deteriorada del otro banco por contagio de la Central de Riesgos SSF.
 
 ### La tabla de categorías y días de mora (Anexo 1, numeral 9) — la fuente de verdad
 

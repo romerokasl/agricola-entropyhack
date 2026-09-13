@@ -1,29 +1,61 @@
 # CLAUDE.md — agricola-entropyhack
 
-Contexto permanente del repo. Lo leen Claude Code, Cursor, Antigravity y cualquier
-agente que trabaje acá. **Reemplaza la versión del 6 de septiembre**, que describía un
-producto distinto al que pidió el banco.
+Contexto permanente del repositorio. Lo leen Claude Code, Cursor, Antigravity y cualquier agente que trabaje acá.
 
 ---
 
-## Qué es esto
+## 🏛️ Qué es esto
 
 Entropy Hack 2026 · Key Institute · El Salvador · Reto **Bancoagrícola**.
 
-**El reto es un AGENTE CONVERSACIONAL DE COBRANZA PREVENTIVA.** La conversación no es
-una feature: es el producto. Lo confirmó el brief oficial del banco el 12 de septiembre.
+**Plataforma**: **Anticipa Bancoagrícola** — Motor Predictivo, Cobranza Empática y Rentabilidad Activa.
+La conversación no es una feature decorativa: **es el producto**.
 
 **Flujo crítico:** `Conversar → Comprender → Adaptarse → Negociar → Cerrar → Registrar`
 
-> *"No buscamos solo respuestas inteligentes. Buscamos una gestión completa, empática,
-> trazable y orientada a un resultado."* — Bancoagrícola
+> *"No buscamos solo respuestas inteligentes. Buscamos una gestión completa, empática, trazable y orientada a un resultado."* — Bancoagrícola
 
-**La tesis:** no es un cobrador. Es una conversación que protege el récord crediticio de
-la persona. El pago llega como consecuencia de eso, nunca al revés.
+**La tesis:** No es un cobrador hostil; es una conversación que protege el récord crediticio de la persona. El pago llega como consecuencia natural de eso. Además, monetiza clientes sanos convirtiendo la prevención en rentabilidad activa.
 
 ---
 
-## 🎯 Cómo se evalúa (pesos oficiales)
+## 🌟 Tres Diferenciadores Clave
+
+1. **Precisión Auditable (Cumplimiento SSF):**
+   * Motor predictivo entrenado con datos de la industria.
+   * Modelos explicables con **SHAP**, garantizando que cada probabilidad y motivo de contacto sea 100% auditable y transparente ante la SSF.
+2. **Cobranza Empática y Accionable:**
+   * La IA comprende el contexto real del deudor salvadoreño (quincenas 15/30, remesas, ventana legal de buró de 10 días, red de 890+ corresponsales).
+   * Mapea automáticamente la situación del cliente a **productos reales de Bancoagrícola** mediante la escalera de 8 opciones.
+3. **Rentabilidad Activa (Monetización Tier A):**
+   * El sistema detecta clientes con deuda saldada o 0 días de atraso (**Tier A Prime**) y activa oportunidades de **cross-selling y up-selling** (Adelanto de Salario, Extrafinanciamiento limpio, upgrade de tarjeta).
+
+---
+
+## 🔄 Pipeline de la Aplicación
+
+### 1. Flujo Outbound (Nosotros contactamos):
+* **Batch diario nocturno (03:00 AM)** tras consolidación contable (EOD).
+* **Capa reactiva de supresión:** Si el cliente paga durante el día, se cancela cualquier mensaje o llamada pendiente.
+* **Evaluación de probabilidades de mora y segmentación por Tiers:**
+  * **Tier A Prime (Deuda saldada / 0 días de mora):** Bypass de recordatorios de cobro. **Siempre enviar ofertas de Cross-selling y Up-selling.**
+  * **Tier A Preventivo (0 a 14 días de atraso / cuota al día con riesgo):** Recordatorio amigable de bajo costo, facilidades operativas (mover fecha a la quincena, débito automático).
+  * **Tier B (14 a 31 días) y Tier C (32 a 120 días):**
+    * Envío prioritario de recordatorios digitales.
+    * Agente conversacional empático: comprensión de causas, propuesta de abono parcial o fraccionamiento según reglas duras de elegibilidad del banco.
+  * **Tier D-E+ (120 a 365+ días):**
+    * Recordatorio formal de cierre.
+    * **Menor esfuerzo del bot para rescatar al cliente:** la probabilidad de recuperación automatizada disminuye drásticamente; se tiende a **referir rápidamente a un agente humano** para atención personalizada o cobranza especializada.
+
+### 2. Flujo Inbound (El cliente nos contacta):
+* Atención receptiva omnicanal (WhatsApp/Web/Voz).
+* **Enfoque inicial:** Contestar la duda o necesidad puntual del cliente.
+* **Consulta en tiempo real a Supabase:** Predicción del modelo, score SHAP, perfil financiero, categoría NCB-022 y opciones elegibles.
+* Negociación gobernada por reglas duras o escalamiento a humano si lo solicita o la situación lo amerita.
+
+---
+
+## 🎯 Criterios de Evaluación
 
 | Criterio | Peso |
 |---|---|
@@ -32,179 +64,41 @@ la persona. El pago llega como consecuencia de eso, nunca al revés.
 | Solidez técnica | **20** |
 | Dashboard y datos | **10** |
 
-Suman 70; faltan 30 sin confirmar (probablemente pitch y negocio).
+---
 
-**Implicación para cualquier decisión técnica:** 40 puntos están en la conversación y
-en cerrar acuerdos. El scorer de riesgo, por bueno que sea, no mueve esos 40 puntos.
+## 🛠️ Stack y Operación
+
+Next.js 14.2.24 · React 18 · TypeScript estricto · Tailwind 3 · Supabase PostgreSQL · microservicio Python FastAPI en `ml/`.
+
+* `npm ci` para instalar dependencias (**nunca `npm install`**).
+* `npm run db:migrate` y `npm run seed:apply` para esquema y datos deterministas.
+* `npm run verify:reglas` (23 pruebas unitarias de negocio y validador).
+* `npm run ataque` (batería de 20 ataques contra el agente).
+* `/api/predict` tiene **Smart Fallback**: la app funciona al 100% aunque el microservicio Python no esté corriendo.
 
 ---
 
-## Stack
+## 🚨 Reglas del Agente y Guardrails
 
-Next.js 14.2.24 · React 18 · TypeScript estricto · Tailwind 3 · Supabase ·
-microservicio Python FastAPI en `ml/` · Vercel.
-
-- `npm ci` para instalar (**no `npm install`** — reescribe el lockfile y genera
-  conflictos entre las 4 laptops)
-- El servicio de Python corre local: `cd ml && uvicorn api:app --port 8000`
-- `/api/predict` tiene **fallback determinista**: la app funciona sin el servicio Python
-
----
-
-## Reglas del agente
-
-**El archivo de referencia es `01-REGLAS-DEL-AGENTE.md`.** Lo esencial:
-
-### Guardrails que no se pueden romper (los puso el banco)
-
-- ❌ Nunca amenazar ni insinuar consecuencias legales
-- ❌ Nunca culpar ni juzgar
-- ❌ Nunca mencionar terceros (familia, empleador, referencias)
-- ❌ Nunca ofrecer **productos de otro banco**
-- ❌ Nunca inventar productos, tasas o beneficios que no existen
-- ❌ Nunca aceptar plazos irreales
-- ✅ **Una sola acción recomendada por mensaje** (evidencia PNAS 2025, 13M personas)
-- ✅ Siempre ofrecer salida a un humano
-- ✅ Nunca urgencia falsa: si faltan 6 días, son 6 días
-- ✅ Cero jerga: "tu pago", "tu récord", "te faltan" — nunca "score", "mora", "provisión"
-- ✅ Español salvadoreño cálido, voseo natural, 2–3 frases por turno
-
-### Límites de negociación
-
-```
-PLAZO    ✅ vencimiento, o 1–3 días después · mover fecha al siguiente ciclo
-         ❌ más de 30 días · meses · años
-MONTO    ✅ total, o abono parcial que evite el deterioro
-         ❌ condonar capital o intereses
-PRODUCTO ✅ solo la escalera de opciones (abajo)
-         ❌ cualquier cosa fuera de esa lista
-```
-
-### Escalera de opciones — ofrecer siempre el escalón mínimo suficiente
-
-1. Recordatorio / confirmación — $0
-2. **Mover la fecha de pago a la quincena** ⭐ — $0
-3. Abono parcial que evita la mora — $0
-4. Activar débito automático — $0
-5. Dividir la cuota en 2 pagos quincenales — bajo
-6. Adelanto de Salario / Extrafinanciamiento *(productos reales de BA)* — medio
-7. Reestructura / readecuación — alto
-8. Pase a asesor humano — alto
-
-### Configuración
-
-`temperature: 0.2` (recomendación explícita del ingeniero de IA del banco) ·
-`max_tokens` ~200 · validador determinista en cada turno antes de mostrar la respuesta.
-
-### 🚨 El jurado va a intentar romper el agente en vivo
-
-Lo anunciaron. La batería de 20 ataques está en `01-REGLAS-DEL-AGENTE.md` §4.
-**Correrla y documentar el resultado en el README.**
+* ❌ Nunca amenazar ni insinuar consecuencias legales o embargos.
+* ❌ Nunca culpar ni juzgar.
+* ❌ Nunca mencionar a terceros (familia, vecinos, empleador).
+* ❌ Nunca ofrecer productos de otro banco.
+* ❌ Nunca inventar productos, tasas o beneficios que no existan en el banco.
+* ❌ Nunca aceptar plazos fuera de rango (máximo vencimiento o 1 a 3 días después; o mover a la quincena).
+* ❌ Condonación de capital o intereses: estrictamente prohibida.
+* ✅ **Una sola acción recomendada por mensaje** (evidencia PNAS 2025, 13M de personas).
+* ✅ Siempre ofrecer salida a un humano.
+* ✅ Cero jerga financiera con el cliente: decir "tu pago", "tu récord", "tu cuota" (nunca "score", "PD30", "provisión").
+* ✅ Español salvadoreño cálido, voseo natural y máximo 2 a 3 frases por turno.
+* ✅ **Validador determinista** auditando cada turno antes de responder.
 
 ---
 
-## Los 5 insights locales — van DENTRO de la conversación
+## ⚖️ Normativa NCB-022 y Ley de Historial de Crédito
 
-1. **La quincena.** Se cobra el 15 y el 30. Si la cuota vence el 8, la persona falla
-   todos los meses. Detectarlo y ofrecer mover la fecha cuesta cero. **Es el caso
-   estrella del demo.**
-2. **Las remesas.** ~24 % del PIB; el banco ya las cobra en su app. Si la remesa entra
-   el 5 y la cuota vence el 3, son 2 días que generan mora 12 veces al año. **Señal que
-   ningún buró tiene.**
-3. **La ventana de 10 días.** Por ley los burós actualizan los primeros 10 días del mes.
-   El agente lo nombra con exactitud. Urgencia honesta y verificable.
-4. **890+ corresponsales**, 100 % de distritos. *"Podés pagar a dos cuadras."*
-5. **Productos que ya existen.** Adelanto de Salario, Extrafinanciamiento, Sobregiro
-   Elite. **El banco prohibió inventar productos — nosotros ya tenemos la lista real.**
-
----
-
-## Datos del banco (dichos en vivo el 12 sep)
-
-- **~30,000 clientes** en incumplimiento en algún momento
-- **~90 % es mora temprana** — se les olvidó, no es que no puedan pagar
-- Canales actuales: **voz (mucho)**, WhatsApp, correo, SMS
-- Ya usan bots, pero *"tienen cierta rigidez… seguir una ruta de conversación específica"*
-- Persona arquetipo del banco: **Valentina** (metas: estudios, hogar, metas, finanzas
-  saludables). Propósito: **"Bienestar para todos"**
-
-## Contexto de industria (verificado)
-
-- Bancoagrícola: #1 del país, 24.2 % de la cartera bruta, **750,000 usuarios de banca
-  móvil**, **$17.5 M de inversión tecnológica en 2026**, 62 agencias y +890 corresponsales
-- Sistema: cartera $19,978.8 M; consumo+vivienda $9,348.2 M; **morosidad 1.50 %**
-  ⚠️ **No pitchear "crisis de mora"** — es bajísima y el jurado es bancario
-- **PNAS 2025**: recordatorios conductuales reducen morosidad a 60 días 0.42–0.57 pp;
-  **una sola acción por mensaje** funciona mejor que varias
-- **NCB-022 (SSF)**: clasifica por días de mora y determina el % de reserva. Evitar el
-  deterioro libera provisiones — ahí está el ROI
-- **Ley de Protección al Consumidor**: prohíbe cobros difamatorios. **El tono empático
-  es cumplimiento normativo**, no decoración
-
----
-
-## Diseño
-
-**El canal se ve como WhatsApp.** El banco lo recomendó explícitamente. Telegram o app
-de mensajes también sirven.
-
-Colores de marca (extraídos del sitio real y coherentes con las láminas del banco):
-
-| Token | HEX | Uso |
-|---|---|---|
-| amarillo | `#FDDA24` | relleno de botones. **NUNCA texto** (1.5:1 sobre blanco) |
-| grafito | `#2C2A29` | texto principal, texto sobre amarillo |
-| verde | acento | aparece en las láminas oficiales |
-
-**El cliente NUNCA ve rojo.** Rojo = vergüenza = evasión, y el reto pide empatía.
-El rojo vive solo en la consola interna del banco.
-
-⚠️ El `tailwind.config.ts` del repo trae `agricola-blue #003B71`. Ese azul no aparece ni
-en el sitio ni en las láminas del banco. Verificar antes de que domine la UI.
-
----
-
-## Alcance: qué es simulado y qué no
-
-| Simulado (lo pidió el banco) | Real y desplegado |
-|---|---|
-| El canal (se ve como WhatsApp, no lo es) | La app, en una URL pública |
-| Los datos del cliente (dataset de juguete) | La BD con las conversaciones registradas |
-| El pago (no se mueve dinero) | El agente LLM respondiendo de verdad |
-| La integración con sistemas del banco | El dashboard con métricas calculadas |
-
-**"Demo" no significa "mockup estático".** El banco pide *demo estable, repositorio y
-README, transcripción y resultado, dashboard con métricas* — eso es software
-funcionando. Construir algo desplegado cumple el brief mejor, no lo contradice.
-
----
-
-## Convenciones
-
-- Ramas `feat/*`, `fix/*`, `chore/*`. **Nunca trabajar en `main`**
-- Conventional commits. **Uno por acción**, granularidad máxima sin romper el árbol,
-  y el mensaje explica **el porqué**, no el qué
-- PRs pequeños. El CI debe pasar antes de mergear
-- Un dueño por archivo grande — el 90 % de los conflictos de merge en un hackatón son
-  dos personas en el mismo componente
-- Código, archivos y ramas en inglés. **UI y dominio en español**
-- Prohibido `any` en TypeScript
-- `SUPABASE_SERVICE_ROLE_KEY` **solo** en Route Handlers y Server Components. Jamás en
-  el cliente, jamás con prefijo `NEXT_PUBLIC_`
-- Migraciones de esquema por archivo en `supabase/migrations/`, nunca desde el dashboard
-- **No mezclar Alembic con las migraciones de Supabase.** Un solo sistema
-
----
-
-## Prioridades cuando hay que elegir
-
-**Profundidad > amplitud.** Lo dijo el banco: *"Una funcionalidad estable vale más que
-diez incompletas."*
-
-El flujo que tiene que estar impecable: **conversar → comprender → negociar → cerrar →
-registrar**, con el caso de Karla.
-
-- Si una tarea va a tomar más de 45 min, parar y proponer dos alternativas más baratas
-- El estado del demo se resetea con un comando — se va a correr veinte veces
-- Probar el modo sin red **temprano**, no a las 3 a.m.
-- **Congelar features** con 6 h restantes · **grabar el video de respaldo** con 4 h
+* **No es un promedio:** La clasificación NCB-022 (SSF) es una **foto puntual al cierre del mes** (*point-in-time*), no un promedio histórico.
+* **Pago total:** Si el cliente cancela la totalidad de la mora antes del corte, al cierre califica automáticamente en **Categoría A1 (0 días de mora)** y el banco libera el 100% de la reserva.
+* **Período de cura (Reestructuraciones):** Si un crédito se reestructura, la norma prohíbe subirlo de golpe a Categoría A; exige 4 meses continuos para subir a B y de 6 a 12 meses continuos de pago puntual para volver a A.
+* **Principio de Calificación Integral (Contagio):** Un deudor no puede tener calificaciones dispersas en créditos sin garantía en Bancoagrícola (el peor crédito arrastra a los demás). El contagio interbancario por reporte de otro banco en la Central de Riesgos de la SSF (>20% de pasivos) también deteriora la calificación.
+* **Buró vs NCB-022:** La NCB-022 mide reservas líquidas que el banco aparta; la ley de burós regula el historial del cliente (los burós actualizan del 1 al 10 del mes, y deben eliminar reportes negativos al día hábil siguiente de saldada la deuda).

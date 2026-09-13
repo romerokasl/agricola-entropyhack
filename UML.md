@@ -1,191 +1,202 @@
-# Especificación y Diagramas UML del Dominio — Bancoagrícola EntropyHack
+# Especificación y Diagramas UML del Dominio — Anticipa Bancoagrícola
 
-> **Nota de Cumplimiento Normativo del Hackathon:**
-> Este documento contiene únicamente el **diseño conceptual, arquitectura de entidades y diagramas UML/ER (pseudo-esqueleto)**. 
-> No contiene código ejecutable SQL ni scripts de base de datos pre-construidos, cumpliendo con la normativa del evento de no generar código previo.
-
-> ⚠️ **Este documento describe el dominio PRE-PIVOTE (el scorer preventivo con
-> pantallas), no el agente conversacional.** Quedó desalineado con el brief oficial del
-> 12 de septiembre en tres puntos concretos:
+> **Plataforma**: **Anticipa Bancoagrícola** — Motor Predictivo, Cobranza Empática y Rentabilidad Activa.
 >
-> 1. **No tiene tabla de conversación ni de acuerdo**, que es justo la evidencia que el
->    banco pide textual ("transcripción y resultado").
-> 2. `PREVENTIVE_INTERVENTION.escalon_costo` dice "1 a 6"; la escalera real tiene **8**
->    escalones.
-> 3. Su enum `tipo_intervencion` no coincide con la escalera: le faltan débito
->    automático, Adelanto de Salario/Extrafinanciamiento, reestructura y pase a humano,
->    y agrega "PausaCuota"/"Corresponsal", que no son escalones. **Codificar la escalera
->    desde acá rompería el guardrail "si no está en la lista, no existe".**
->
-> **Fuentes autoritativas:** la escalera y los límites de negociación están en
-> `docs/contexto/01-reglas-del-agente.md` §2–§3; el esquema vigente del agente son las
-> 4 tablas de `supabase/migrations/`. Este UML se conserva como referencia de dominio y
-> como insumo de una fase 2.
+> Este documento especifica el modelo de datos relacional activo (PostgreSQL / Supabase), la arquitectura de clases del orquestador del agente y los diagramas de secuencia para los pipelines **Outbound** e **Inbound**.
 
 ---
 
-## 1. Diagrama Entidad-Relación Conceptual (ERD)
+## 1. Diagrama Entidad-Relación Activo (Supabase PostgreSQL)
+
+El esquema de producción del sistema implementa las 4 tablas auditables que garantizan la trazabilidad total exigida por la Superintendencia del Sistema Financiero (SSF):
 
 ```mermaid
 erDiagram
-    CUSTOMER ||--o{ CREDIT_OBLIGATION : "posee"
-    CUSTOMER ||--o{ FINANCIAL_BEHAVIOR : "registra"
-    CUSTOMER ||--o{ RISK_SCORE : "evaluado_por"
-    CREDIT_OBLIGATION ||--o{ PAYMENT_EVENT : "genera"
-    CREDIT_OBLIGATION ||--o{ PREVENTIVE_INTERVENTION : "recibe"
-    CREDIT_OBLIGATION ||--o{ BUREAU_WINDOW : "sujeta_a"
+    CLIENTES ||--o{ CONVERSACIONES : "sostiene"
+    CONVERSACIONES ||--o{ TURNOS : "contiene"
+    CONVERSACIONES ||--o| ACUERDOS : "concluye_en"
 
-    CUSTOMER {
+    CLIENTES {
         UUID id PK "Identificador único"
-        string dui_enmascarado "Documento de identidad protegido"
-        string nombre_completo "Nombre del cliente"
-        string distrito "Distrito geográfico (El Salvador)"
-        string segmento "Asalariado, Remesas, Independiente, Joven, Senior"
-        string tipo_ingreso "Quincenal (15/30), Mensual, Irregular"
-        int dia_ingreso_1 "Día principal de cobro (ej. 15)"
+        string slug UK "Identificador legible (karla, marta, etc.)"
+        string nombre "Nombre del cliente"
+        string segmento "asalariado, remesas, informal, joven, senior"
+        string tipo_ingreso "quincenal, mensual, irregular"
+        int dia_ingreso_1 "Primer día de cobro (ej. 15)"
         int dia_ingreso_2 "Segundo día de cobro (ej. 30)"
-        int antiguedad_meses "Meses de relación con Bancoagrícola"
-    }
-
-    CREDIT_OBLIGATION {
-        UUID id PK "Identificador de la obligación"
-        UUID cliente_id FK "Referencia a Customer"
-        string tipo_producto "Tarjeta, Personal, Vehículo, Extrafinanciamiento"
-        string numero_cuenta_enmascarado "Identificador comercial protegido"
-        decimal limite_o_monto "Monto otorgado o límite"
-        decimal saldo_actual "Saldo adeudado a la fecha"
-        decimal cuota_regular "Monto de la cuota mensual"
+        int dia_remesa "Día del mes en que recibe remesa"
+        string producto "tipo de obligación: tarjeta, personal, etc."
+        decimal cuota "Monto de la cuota mensual en USD"
+        decimal saldo "Saldo deudor total en USD"
         int dia_corte "Día del mes de corte"
         int dia_pago "Día del mes límite de pago"
-        decimal tasa_interes "Tasa de interés pactada"
-        string categoria_riesgo_actual "A1, A2, B, C1, C2, D1, D2, E (Norma SSF NCB-022, Art.18) — ver docs/contexto/05-productos-y-ncb022.md"
-        int dias_mora_cuota_mas_antigua "Base real de la clasificación (Anexo 1, num.9): decide la categoría"
-        boolean tiene_debito_automatico "Indicador de adhesión a débito"
+        int dias_atraso "Días de mora de la cuota más antigua (NCB-022)"
+        string categoria_ncb022 "A1, A2, B, C1, C2, D1, D2, E (point-in-time)"
+        boolean tiene_debito_automatico "Indica si posee débito activo"
+        string tipo_empleo "planillero_bancoagricola, externo, independiente"
+        boolean tiene_cuenta_optima "Habilita Sobregiro Elite"
+        int riesgo_score "Score predictivo del modelo (0-100)"
+        string riesgo_banda "LOW, MODERATE, MODERATE_HIGH, CRITICAL"
+        jsonb shap_explicacion "Top 3 factores de riesgo del modelo ML"
+        string tier_operativo "TIER_A_PRIME, TIER_A_PREVENTIVO, TIER_B, TIER_C, TIER_D_E"
     }
 
-    FINANCIAL_BEHAVIOR {
-        UUID id PK "Identificador de métrica"
-        UUID cliente_id FK "Referencia a Customer"
-        decimal ingreso_mensual_estimado "Ingreso recurrente en USD"
-        decimal ratio_dti "Debt-to-Income: Deuda / Ingreso"
-        decimal utilizacion_linea "Porcentaje de uso de línea disponible"
-        decimal variacion_ahorros_3m "Variación en depósitos/ahorros (-100% a +100%)"
-        int atrasos_recientes_semestre "Cantidad de atrasos en últimos 6 meses"
-        decimal volatilidad_gastos "Desviación estándar de egresos recientes"
-        boolean remesa_retrasada "Señal de desfase en recepción de remesa habitual"
-        boolean desalineacion_quincena "Detección de pago antes del cobro de quincena"
-        timestamp fecha_calculo "Momento de cómputo de la métrica"
+    CONVERSACIONES {
+        UUID id PK "Identificador único de la sesión"
+        UUID cliente_id FK "Referencia a CLIENTES"
+        string canal "texto o voz"
+        string modo_voz "pipeline, s2s o NULL si canal=texto"
+        string apertura "agente (outbound) o cliente (inbound)"
+        string estado "activa, cerrada_con_acuerdo, cerrada_sin_acuerdo, transferida_humano"
+        timestamp creada_en "Momento de inicio de la conversación"
+        timestamp cerrada_en "Momento de finalización"
     }
 
-    RISK_SCORE {
-        UUID id PK "Identificador de la evaluación"
-        UUID cliente_id FK "Referencia a Customer"
-        int indice_riesgo "Score normalizado de 0 a 100"
-        string nivel_severidad "LOW, MODERATE, MODERATE_HIGH, CRITICAL"
-        decimal probabilidad_atraso_30d "Probabilidad matemática PD30 (0.0000 a 1.0000)"
-        jsonb razones_explicables "Top 3 factores de estrés SHAP (Obligatorio)"
-        string version_modelo "Identificador del modelo en producción"
-        timestamp fecha_evaluacion "Fecha de la inferencia"
+    TURNOS {
+        UUID id PK "Identificador del turno"
+        UUID conversacion_id FK "Referencia a CONVERSACIONES"
+        int indice_turno "Secuencia cronológica dentro de la sesión"
+        string rol "user, assistant, tool"
+        text contenido "Texto literal de la interacción (PII enmascarado)"
+        int latencia_ms "Tiempo de respuesta del turno en milisegundos"
+        int tokens_in "Tokens de entrada consumidos"
+        int tokens_out "Tokens de salida generados"
+        boolean validador_ok "Indica si superó el filtro determinista"
+        string modelo_version "Identificador del LLM proveedor"
+        timestamp creado_en "Marca de tiempo del turno"
     }
 
-    PREVENTIVE_INTERVENTION {
-        UUID id PK "Identificador de la intervención"
-        UUID obligacion_id FK "Referencia a CreditObligation"
-        string tipo_intervencion "AlineacionQuincena, Recordatorio, AbonoParcial, CuotaDividida, PausaCuota, Corresponsal"
-        int escalon_costo "Nivel de 1 a 6 (menor a mayor costo)"
-        string mensaje_empatico "Copy personalizado según principios éticos"
-        jsonb detalle_propuesta "Parámetros de la facilidad (nueva fecha, quincenas, etc.)"
-        string canal "BancaMovil, WhatsApp, SMS, Corresponsal"
-        string estado "Propuesta, Vista, Aceptada, Rechazada, Resuelta"
-        timestamp fecha_envio "Momento de emisión"
-        timestamp fecha_respuesta "Momento de respuesta del cliente"
-    }
-
-    BUREAU_WINDOW {
-        UUID id PK "Identificador del ciclo de buró"
-        UUID obligacion_id FK "Referencia a CreditObligation"
-        int dias_atraso_actuales "Días transcurridos desde el vencimiento"
-        int dias_restantes_ventana "Días hasta el corte de reporte (día 10 del mes)"
-        date fecha_limite_reporte "Fecha fatal de consolidación en burós"
-        decimal monto_minimo_limpieza "Monto para evitar el reporte a burós"
-        boolean reporte_evitado "Indica si se previno la mancha en el récord"
-    }
-
-    PAYMENT_EVENT {
-        UUID id PK "Identificador del pago"
-        UUID obligacion_id FK "Referencia a CreditObligation"
-        decimal monto_pagado "Valor abonado en USD"
-        date fecha_programada "Fecha en la que debía pagarse"
-        date fecha_real "Fecha en la que efectivamente se pagó"
-        int dias_diferencia "fecha_real - fecha_programada"
-        string canal_pago "Digital, Sucursal, Corresponsal_890"
+    ACUERDOS {
+        UUID id PK "Identificador del resultado"
+        UUID conversacion_id FK "Referencia única a CONVERSACIONES"
+        int escalon "Nivel 1 al 8 de la escalera de opciones"
+        string tipo "mover_fecha, abono_parcial, fraccionamiento, cross_sell, etc."
+        decimal monto "Monto acordado en USD (si aplica)"
+        date fecha_acordada "Fecha pactada de cumplimiento o cobro"
+        string motivo_no_acuerdo "Razón tipada si no se formalizó acuerdo"
+        timestamp registrado_en "Momento de persistencia atómica"
     }
 ```
 
 ---
 
-## 2. Diagrama de Clases y Arquitectura de Dominio (UML)
+## 2. Diagrama de Clases del Dominio y Orquestación
 
 ```mermaid
 classDiagram
-    class Customer {
+    class Cliente {
         +UUID id
-        +string duiMasked
-        +string fullName
-        +string district
-        +IncomeType incomeType
-        +int primaryPayday
-        +int? secondaryPayday
-        +hasPaydayMismatch(int dueDay) bool
+        +string nombre
+        +decimal cuota
+        +decimal saldo
+        +int diasAtraso
+        +CategoriaNCB022 categoria
+        +TierOperativo tier
+        +boolean isDeudaSaldada()
+        +boolean isAtrasoActivo()
     }
 
-    class CreditObligation {
-        +UUID id
-        +string accountNumberMasked
-        +ProductType productType
-        +decimal balance
-        +decimal minimumPayment
-        +int cutDay
-        +int dueDay
-        +RiskCategory nc022Category
-        +getDaysOverdue() int
+    class MotorPredictivoML {
+        +calcularProbabilidadMora(Cliente c) float
+        +extraerFactoresSHAP(Cliente c) List~SHAPFactor~
+        +clasificarTier(Cliente c, float probMora) TierOperativo
     }
 
-    class AnticipationEngine {
-        +calculatePD30(FinancialBehavior metrics) RiskScore
-        +extractTopRiskFactors(FinancialBehavior metrics) List~Reason~
+    class OrquestadorPipeline {
+        +ejecutarOutboundBatch(List~Cliente~ cartera) List~AccionProgramada~
+        +procesarInbound(Cliente c, string mensajeInicial) SesionConversacion
+        +aplicarSupresionReactiva(UUID clienteId) void
     }
 
-    class InterventionOrchestrator {
-        +determineMinimalSufficientAction(RiskScore score, CreditObligation obligation) PreventiveIntervention
-        +formatEmpatheticMessage(PreventiveIntervention action, Customer customer) string
+    class AgenteConversacional {
+        +procesarTurno(Conversacion conv, string input) TurnoRespuesta
+        +consultarOpcionesValidas(Cliente c) List~OpcionElegible~
+        +ejecutarTool(string toolName, JsonObject args) ToolResult
     }
 
-    class BureauShield {
-        +calculateRemainingWindow(CreditObligation obligation) BureauWindow
-        +isReportingImminent(BureauWindow window) bool
+    class ValidadorDeterminista {
+        +validarTexto(string texto, Cliente c) ResultadoValidacion
+        +contieneJergaProhibida(string texto) bool
+        +montoEsValidoEnContexto(decimal monto, Cliente c) bool
+        +excedeFrasesPermitidas(string texto) bool
     }
 
-    Customer "1" *-- "many" CreditObligation
-    AnticipationEngine ..> RiskScore : produce
-    InterventionOrchestrator ..> PreventiveIntervention : orquesta
-    BureauShield ..> BureauWindow : calcula
+    class ModuloMonetizacion {
+        +obtenerOfertasCrossSelling(Cliente c) List~ProductoOferta~
+        +obtenerOfertasUpSelling(Cliente c) List~ProductoOferta~
+    }
+
+    OrquestadorPipeline --> MotorPredictivoML : consulta inferencia
+    OrquestadorPipeline --> ModuloMonetizacion : activa en Tier A Prime
+    OrquestadorPipeline --> AgenteConversacional : inicia sesión
+    AgenteConversacional --> ValidadorDeterminista : audita cada turno
+    AgenteConversacional ..> Cliente : lee perfil tipado
 ```
 
 ---
 
-## 3. Lógica de Interacciones y Reglas del Dominio
+## 3. Diagramas de Secuencia Operativos
 
-### A. La Regla de la Quincena (Alineación de Calendario)
-* **Condición:** Si `Customer.tipo_ingreso == "quincenal"` y los días de cobro son 15 y 30, pero `CreditObligation.dia_pago` se ubica entre el día 5 y el 12.
-* **Diagnóstico:** Desalineación estructural de calendario (estrés técnico por falta de liquidez post-gastos de mes).
-* **Acción Orquestada:** Intervención Nivel 2: Mover la fecha de corte/pago al día 16 sin costo financiero.
+### A. Pipeline Outbound (Batch Diario + Supresión + Segmentación de Tiers)
 
-### B. El Escudo de los 10 Días (Ventana Legal de Buró)
-* **Condición:** Si `CreditObligation.getDaysOverdue() > 0` y la fecha actual es anterior al día 10 del mes siguiente.
-* **Diagnóstico:** El cliente está en mora operativa interna, pero aún no se ha consolidado el reporte ante Equifax/TransUnion.
-* **Acción Orquestada:** Notificación transparente con contador de días restantes y opción de pago mínimo/parcial para extinguir la deuda antes del corte.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Core as Core Bancario (EOD)
+    participant Pipe as Orquestador Batch (03:00 AM)
+    participant ML as Motor ML / SHAP
+    participant DB as Supabase DB
+    participant Monetiza as Módulo Monetización
+    participant Agente as Agente Conversacional
 
-### C. Inclusión de Canal Físico (890 Corresponsales)
-* **Condición:** Si el cliente pertenece al segmento `senior` o no registra actividad en la banca móvil en los últimos 90 días.
-* **Acción Orquestada:** Canalización vía SMS indicando la dirección del corresponsal financiero Bancoagrícola más cercano para pago presencial sin fricción digital.
+    Core->>Pipe: Cierre contable consolidado
+    Pipe->>DB: Consultar cartera con cuotas próximas o vencidas
+    DB-->>Pipe: Lista de clientes
+
+    loop Por cada cliente
+        Pipe->>Pipe: Evaluar si deuda == saldada (0 días mora)
+        alt Deuda Saldada / Cuota al día (Tier A Prime)
+            Pipe->>Monetiza: Obtener oferta Cross-selling / Up-selling
+            Monetiza-->>Pipe: Oferta elegible (Adelanto de Salario / Extrafinanciamiento)
+            Pipe->>Agente: Programar notificación comercial sin cobranza
+        else Cuota Pendiente
+            Pipe->>ML: Inferencia de probabilidad de mora
+            ML-->>Pipe: Score + Top 3 Factores SHAP
+            alt Tier A Preventivo (0-14 días)
+                Pipe->>Agente: Programar recordatorio amistoso / alineación quincena
+            alt Tier B o C (14-120 días)
+                Pipe->>Agente: Programar recordatorio prioritario + conversación empática
+            else Tier D-E+ (120-365+ días)
+                Pipe->>Agente: Programar contacto formal con bypass rápido a Humano
+            end
+        end
+    end
+```
+
+### B. Pipeline Inbound (El Cliente se Comunica)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Cliente as Cliente (WhatsApp/Web/Voz)
+    participant BFF as /api/chat
+    participant DB as Supabase DB
+    participant Agent as Agente LLM
+    participant Val as Validador Determinista
+
+    Cliente->>BFF: Inicia conversación ("Hola, tengo una duda con mi pago")
+    BFF->>DB: Consultar perfil, predicción actual y reglas elegibles
+    DB-->>BFF: Datos estructurados del cliente y categoría NCB-022
+    BFF->>Agent: Prompt enriquecido (enfoque receptivo: responder necesidad)
+    Agent->>BFF: Propuesta de respuesta
+    BFF->>Val: Auditar respuesta (palabras prohibidas, montos, límites)
+    alt Validación Exitosa
+        Val-->>BFF: Aprobado
+        BFF-->>Cliente: Mensaje empático y claro
+    else Detección de Violación o Alucinación
+        Val-->>BFF: Rechazado
+        BFF->>Agent: Regenerar con instrucción correctiva
+        Agent-->>BFF: Respuesta corregida
+        BFF-->>Cliente: Mensaje seguro auditado
+    end
+```

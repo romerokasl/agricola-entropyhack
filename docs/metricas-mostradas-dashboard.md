@@ -20,17 +20,20 @@ El dashboard se organiza en **4 paneles de indicadores clave (KPIs)** y **1 vist
 
 ## 2. Especificación Detallada de Métricas por Panel
 
-### Panel 1: Impacto Financiero y Negocio (Gerencia de Cobranzas)
+### Panel 1: Impacto Financiero, Mitigación de Riesgo y Rentabilidad Activa
 
-Métricas destinadas a demostrar la efectividad del agente en la mitigación de mora temprana y la optimización de costos.
+Métricas destinadas a demostrar tanto la efectividad del agente en la mitigación de mora como la generación activa de ingresos por monetización en clientes sanos (**Tier A Prime**).
 
 | Métrica / KPI | Unidad | Cálculo Técnico en el Sistema | Visualización en UI | Valor Esperado / SLA |
 |---|---|---|---|---|
-| **Tasa de Compromiso de Pago** | Porcentaje (%) | `(Llamadas con acuerdo exitoso / Total llamadas contestadas) * 100` | **Tarjeta KPI grande** con badge de tendencia comparativa vs periodo anterior. | > 65% |
-| **Monto en Riesgo Gestionado vs Recuperado** | Dólares ($ USD) | Suma de montos de cuotas con fecha de promesa registrada en Postgres vs total en riesgo asignado. | **Tarjeta KPI destacada** con barra de avance proporcional (Recuperado vs Meta). | Visualización directa en $ USD |
-| **Distribución de Soluciones Acordadas** | Cantidad y % | Conteo agrupado por campo `tipo_solucion`: `plazo_1_a_3_dias`, `mover_a_quincena`, `abono_parcial`. | **Gráfico de dona interactivo** con desglose porcentual por opción de negocio. | Distribución representativa |
+| **Tasa de Compromiso de Pago** | Porcentaje (%) | `(Llamadas/chats con acuerdo exitoso / Total interacciones con mora) * 100` | **Tarjeta KPI grande** con badge de tendencia comparativa vs periodo anterior. | > 65% |
+| **Monto en Riesgo Recuperado** | Dólares ($ USD) | Suma de montos de cuotas con acuerdo formal registrado en Postgres vs total en riesgo. | **Tarjeta KPI destacada** con barra de avance proporcional (Recuperado vs Meta). | Visualización directa en $ USD |
+| **Provisiones Liberadas (NCB-022)** | Dólares ($ USD) | `Σ [ Saldo × (% Reserva sin intervención − % Reserva con acuerdo) ]` | **Tarjeta de ROI Regulatorio**: Capital líquido salvado de inmovilización en SSF. | Cuantificable en miles de USD |
+| **Conversión Cross/Up-selling (Tier A)** | Porcentaje (%) | `(Ofertas comerciales aceptadas / Total ofertas presentadas a clientes sanos) * 100` | **Badge de Monetización Activa** con desglose por producto (Adelanto, Extrafinanciamiento). | > 18% de colocación digital |
+| **Volumen de Colocación Originada** | Dólares ($ USD) | Suma de montos aprobados/desembolsados en productos cross/up-sell sin fricción. | **Tarjeta KPI de Nuevos Ingresos**: Crecimiento de cartera comercial activa. | Directo en $ USD |
+| **Distribución de Soluciones Acordadas** | Cantidad y % | Conteo agrupado por campo `tipo_solucion`: `mover_a_quincena`, `abono_parcial`, `fraccionamiento`, etc. | **Gráfico de dona interactivo** con desglose porcentual por opción de negocio. | Distribución representativa |
 | **Costo por Acuerdo Logrado (Unit Economics)** | Dólares ($ USD) | `Costo total de IA consumido en el periodo / Total de acuerdos exitosos` | **Tarjeta comparativa directa**: Costo IA vs Costo Call Center Humano ($0.85 USD ref). | < $0.10 USD por acuerdo |
-| **Tasa de Contactabilidad Efectiva** | Porcentaje (%) | `(Llamadas contestadas por humano / Total llamadas emitidas) * 100` | **Minigráfico de barras** separando: Contestadas, Buzón de voz, Ocupado/No contesta. | > 55% en base contactable |
+| **Tasa de Contactabilidad Efectiva** | Porcentaje (%) | `(Interacciones atendidas por usuario / Total contactos emitidos) * 100` | **Minigráfico de barras** separando: Contestadas, Buzón de voz, Ocupado/No contesta. | > 55% en base contactable |
 
 ---
 
