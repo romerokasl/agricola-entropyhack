@@ -13,6 +13,7 @@ import type { Apertura, Canal, Cliente, TipoCierre, Turno } from "./types";
 import {
   corregirVoseo,
   esEmergenciaHumana,
+  limpiarPreambuloIa,
   respuestaSegura,
   truncarAFrases,
   validar,
@@ -222,8 +223,8 @@ export async function ejecutarTurno(params: {
   }
 
   // --- Validación: un reintento correctivo, después respuesta segura ---------
-  // Normalizar voseo y acotar a máximo 3 frases antes del chequeo determinista
-  texto = truncarAFrases(corregirVoseo(texto), 3);
+  // Limpiar preámbulos de IA, normalizar voseo y acotar a máximo 3 frases antes del chequeo determinista
+  texto = truncarAFrases(corregirVoseo(limpiarPreambuloIa(texto)), 3);
   const ctxValidacion = { cliente, historial, esPrimerMensajeDelAgente, senal };
   // Una respuesta cortada a media frase nunca se muestra, aunque el resto pase.
   const validacion = truncada
@@ -256,7 +257,7 @@ export async function ejecutarTurno(params: {
         latenciaLlmMs += ms;
       },
     );
-    let textoReintento = truncarAFrases(corregirVoseo(reintento.texto), 3);
+    let textoReintento = truncarAFrases(corregirVoseo(limpiarPreambuloIa(reintento.texto)), 3);
     const segundaValidacion = validarCronometrado(textoReintento, ctxValidacion);
     if (segundaValidacion.ok) {
       texto = textoReintento;
@@ -264,7 +265,7 @@ export async function ejecutarTurno(params: {
       tokensOut = reintento.tokensOut;
     } else {
       // Nunca se muestra una respuesta que no pasó el chequeo, ni en el demo.
-      texto = respuestaSegura(cliente);
+      texto = respuestaSegura(cliente, esPrimerMensajeDelAgente);
       motivoIntervencion = segundaValidacion.motivo;
     }
   }

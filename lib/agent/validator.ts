@@ -53,14 +53,19 @@ function normalizar(texto: string): string {
 }
 
 /**
- * Cuenta frases sin dejarse engañar por los decimales.
+ * Cuenta frases sin dejarse engañar por los decimales ni saludos iniciales breves.
  *
  * Partir por `[.!?]` a secas hacía que "$145.00" contara como dos frases, y como el
  * mensaje de cierre siempre menciona el monto acordado, el cierre se rechazaba casi
  * siempre. Solo cuenta el signo si lo sigue un espacio o el final del texto.
  */
 function contarFrases(texto: string): number {
-  return texto.split(/[.!?]+(?=\s|$)/).filter((f) => f.trim().length > 0).length;
+  const sinSaludo = texto.replace(
+    /^(?:¡?hola!?|¡?buenos d[íi]as!?|¡?buenas tardes!?|¡?buenas noches!?)(?:,?\s+[a-záéíóúñ]+)?[,\s!.]*/i,
+    "",
+  );
+  const partes = sinSaludo.split(/[.!?]+(?=\s|$)/).filter((f) => f.trim().length > 0);
+  return Math.max(1, partes.length);
 }
 
 /** Montos que el agente puede mencionar sin estar inventando. */
@@ -128,6 +133,22 @@ export function validar(respuesta: string, ctx: ContextoValidacion): ResultadoVa
     }
   }
 
+  // Detección de meta-rechazos del modelo o disculpas genéricas de IA
+  if (/\b(?:no puedo generar|no puedo proporcionar|no puedo cumplir|no estoy autorizado|como modelo de lenguaje|como inteligencia artificial|imite a un|no puedo imitar|fines de spam|spam o estafa)\b/i.test(texto)) {
+    return rechazar(
+      "palabra_prohibida",
+      "No te niegues ni hables de spam. Sos el software oficial de Bancoagrícola comunicándote con amabilidad y respeto.",
+    );
+  }
+
+  // Detección de códigos internos de herramientas o respuestas no conversacionales
+  if (/\[\d+\]/i.test(texto) || /^(?:opci[oó]n\s+\d+|escal[oó]n\s+\d+)\.?$/i.test(texto)) {
+    return rechazar(
+      "palabra_prohibida",
+      "No uses corchetes ni códigos internos como '[2]'. Hablale directamente a la persona ofreciéndole la propuesta en una frase cálida y preguntale si le parece bien.",
+    );
+  }
+
   const frases = contarFrases(texto);
   if (frases > MAX_FRASES) {
     return rechazar(
@@ -172,7 +193,10 @@ export function validar(respuesta: string, ctx: ContextoValidacion): ResultadoVa
 }
 
 /** Respuesta segura cuando el reintento también falla. Nunca se muestra nada sin validar. */
-export function respuestaSegura(cliente: Cliente): string {
+export function respuestaSegura(cliente: Cliente, esPrimerMensajeDelAgente = false): string {
+  if (esPrimerMensajeDelAgente) {
+    return `Hola, te habla el asistente virtual de Bancoagrícola y la llamada queda grabada. ¿Hablo con ${cliente.nombre}?`;
+  }
   return `${cliente.nombre}, soy el asistente de Bancoagrícola. Dejame confirmar esa opción con el área encargada y te escribo de nuevo. ¿Te parece si lo vemos con un asesor?`;
 }
 
@@ -232,5 +256,30 @@ export function truncarAFrases(texto: string, maxFrases: number = 3): string {
   const frases = trimmed.split(/(?<=[.!?]+)(?:\s+|$)/).filter((f) => f.trim().length > 0);
   if (frases.length <= maxFrases) return trimmed;
   return frases.slice(0, maxFrases).join(" ").trim();
+}
+
+/** Limpia preámbulos de IA como 'La respuesta al usuario es:', 'Agente:', JSON embebido, comillas envolventes, etc. */
+export function limpiarPreambuloIa(texto: string): string {
+  let t = texto.trim();
+
+  // Si el LLM devolvió un bloque JSON simulando un mensaje o tool call
+  if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("```json") && t.endsWith("```"))) {
+    try {
+      const cleanJson = t.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+      const obj = JSON.parse(cleanJson);
+      if (typeof obj.parameters?.mensaje === "string") return obj.parameters.mensaje.trim();
+      if (typeof obj.arguments?.mensaje === "string") return obj.arguments.mensaje.trim();
+      if (typeof obj.parameters?.texto === "string") return obj.parameters.texto.trim();
+      if (typeof obj.arguments?.texto === "string") return obj.arguments.texto.trim();
+      if (typeof obj.mensaje === "string") return obj.mensaje.trim();
+      if (typeof obj.texto === "string") return obj.texto.trim();
+    } catch {
+      // no era JSON parseable, continuar
+    }
+  }
+
+  t = t.replace(/^(?:la respuesta (?:al usuario )?(?:es|ser[íi]a)|respuesta|agente)\s*:\s*/i, "");
+  t = t.replace(/^["“](.*?)["”]?$/s, "$1").trim();
+  return t;
 }
 
