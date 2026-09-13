@@ -277,7 +277,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   }, []);
 
   /**
-   * Inicia el reconocimiento de voz para el turno del usuario (limpio y sin acumulación)
+   * Inicia el reconocimiento de voz para el turno del usuario con acumulador completo y VAD
    */
   const activarEscuchaUsuario = useCallback(() => {
     if (finLlamadaRef.current || silenciado || procesandoRef.current) return;
@@ -292,51 +292,58 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
     try {
       const rec = new Constructor();
-      rec.lang = "es-SV";
+      // Idioma estándar latinoamericano de alta precisión en Chrome y Edge
+      const navLang = typeof navigator !== "undefined" ? navigator.language : "";
+      rec.lang = navLang.toLowerCase().startsWith("es") ? navLang : "es-419";
       rec.continuous = true;
       rec.interimResults = true;
 
       rec.onresult = (evento: EventoReconocimiento) => {
-        // Bloqueo estricto si el sistema está procesando
+        // Bloqueo estricto si el sistema está procesando o terminó la llamada
         if (procesandoRef.current || finLlamadaRef.current) return;
 
         // Si el agente estaba hablando, verificar si es un barge-in legítimo
         if (estadoVozRef.current === "hablando") {
           const tiempoHablando = Date.now() - inicioHablaAgenteRef.current;
-          // Evitar eco de los primeros 600ms del altavoz
-          if (tiempoHablando < 600) return;
+          // Evitar eco de los primeros 500ms del altavoz
+          if (tiempoHablando < 500) return;
         }
 
-        let textoTurno = "";
-        for (let i = evento.resultIndex; i < evento.results.length; i++) {
-          const trans = evento.results[i][0]?.transcript;
-          if (trans) textoTurno += " " + trans;
+        // Reconstrucción completa de la frase acumulada en la sesión actual
+        let finales = "";
+        let provisional = "";
+        for (let i = 0; i < evento.results.length; i++) {
+          const res = evento.results[i];
+          const trans = res[0]?.transcript ?? "";
+          if (res.isFinal) finales += trans + " ";
+          else provisional += trans;
         }
 
-        const limpio = textoTurno.trim();
-        // Filtrar ruidos cortos, clics o artefactos (< 3 letras)
-        if (limpio.length >= 3) {
-          // Si el agente hablaba y el cliente dijo una palabra real -> Cortar al agente
+        const detectado = (finales + provisional).trim();
+
+        // Filtrar artefactos mínimos (< 2 caracteres)
+        if (detectado.length >= 2) {
+          // Si el agente hablaba y el cliente empezó a hablar -> Interrumpir al agente de inmediato
           if (estadoVozRef.current === "hablando") {
             interrumpirAgente();
             setEstadoVoz("escuchando");
           }
 
-          textoBufferRef.current = limpio;
-          setTranscripcionEnVivo(limpio);
+          textoBufferRef.current = detectado;
+          setTranscripcionEnVivo(detectado);
 
-          // Resetear temporizador de silencio (1.1s para permitir pausas naturales al hablar)
+          // Resetear temporizador de silencio conversacional (950ms)
           if (silencioTimerRef.current) {
             clearTimeout(silencioTimerRef.current);
           }
 
           silencioTimerRef.current = setTimeout(() => {
             const aEnviar = textoBufferRef.current.trim();
-            if (aEnviar.length >= 3 && !procesandoRef.current) {
+            if (aEnviar.length >= 2 && !procesandoRef.current) {
               detenerReconocedor();
               void procesarTurno(aEnviar);
             }
-          }, 1100);
+          }, 950);
         }
       };
 
@@ -347,15 +354,23 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       };
 
       rec.onend = () => {
+        reconocedorRef.current = null;
         // Solo reanudar si todavía debemos estar escuchando y no estamos procesando ni hablando
         if (
           !finLlamadaRef.current &&
           !procesandoRef.current &&
           estadoVozRef.current === "escuchando"
         ) {
-          try {
-            rec.start();
-          } catch {}
+          // Re-instanciar limpiamente para que Chromium no falle con InvalidStateError
+          setTimeout(() => {
+            if (
+              !finLlamadaRef.current &&
+              !procesandoRef.current &&
+              estadoVozRef.current === "escuchando"
+            ) {
+              activarEscuchaUsuario();
+            }
+          }, 60);
         }
       };
 
@@ -382,7 +397,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       setEstadoVoz("pensando");
       setTranscripcionEnVivo("");
 
-      // Registrar mensaje en la auditoría
+      // Registrar mensaje del cliente en el historial de auditoría
       setMensajes((prev) => [...prev, { rol: "cliente", texto }]);
 
       const tInicioLlm = Date.now();
@@ -426,7 +441,16 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         const ultimoTurno = json.data.turnos.at(-1);
         const textoRespuesta = ultimoTurno?.texto ?? "";
 
-        setMensajes(json.data.turnos);
+        // Preservar todo el hilo en el cajón de auditoría sin sobreescribirlo
+        if (textoRespuesta) {
+          setMensajes((prev) => {
+            const yaExiste = prev.some(
+              (m, idx) => idx === prev.length - 1 && m.rol === "agente" && m.texto === textoRespuesta,
+            );
+            return yaExiste ? prev : [...prev, { rol: "agente", texto: textoRespuesta }];
+          });
+        }
+
         if (json.data.metricas) {
           setMetricas(json.data.metricas);
           setEtapas({
@@ -455,6 +479,22 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     },
     [slug, detenerReconocedor, interrumpirAgente, activarEscuchaUsuario],
   );
+
+  /**
+   * Permite enviar el texto reconocido de inmediato sin esperar el silencio
+   */
+  const enviarTurnoInmediato = useCallback(() => {
+    if (procesandoRef.current || finLlamadaRef.current) return;
+    const aEnviar = (textoBufferRef.current || transcripcionEnVivo).trim();
+    if (aEnviar.length >= 2) {
+      if (silencioTimerRef.current) {
+        clearTimeout(silencioTimerRef.current);
+        silencioTimerRef.current = null;
+      }
+      detenerReconocedor();
+      void procesarTurno(aEnviar);
+    }
+  }, [transcripcionEnVivo, detenerReconocedor, procesarTurno]);
 
   /**
    * Reproduce la voz del agente (Piper local o Web Speech API)
@@ -803,19 +843,35 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
                 }}
               />
 
-              {/* Avatar central */}
-              <div
-                className={`relative z-10 flex h-36 w-36 items-center justify-center rounded-full border-2 bg-slate-900 shadow-2xl transition-colors duration-300 ${
+              {/* Avatar central interactivo (Tap para interrumpir o Tap para enviar) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (estadoVoz === "hablando") {
+                    interrumpirAgente();
+                    activarEscuchaUsuario();
+                  } else if (estadoVoz === "escuchando" && (transcripcionEnVivo || textoBufferRef.current)) {
+                    enviarTurnoInmediato();
+                  }
+                }}
+                className={`relative z-10 flex h-36 w-36 items-center justify-center rounded-full border-2 bg-slate-900 shadow-2xl transition-all duration-300 active:scale-95 ${
                   estadoVoz === "hablando"
-                    ? "border-amber-400"
+                    ? "border-amber-400 cursor-pointer hover:border-amber-300 hover:shadow-amber-500/20"
                     : estadoVoz === "escuchando"
-                    ? "border-cyan-400"
+                    ? "border-cyan-400 cursor-pointer hover:border-cyan-300 hover:shadow-cyan-500/20"
                     : estadoVoz === "pensando"
-                    ? "border-purple-400 animate-pulse"
+                    ? "border-purple-400 animate-pulse cursor-wait"
                     : "border-slate-700"
                 }`}
+                title={
+                  estadoVoz === "hablando"
+                    ? "Tocá para interrumpir al asistente"
+                    : estadoVoz === "escuchando" && transcripcionEnVivo
+                    ? "Tocá para enviar lo que dijiste ya"
+                    : "Asistente de Bancoagrícola"
+                }
               >
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center pointer-events-none">
                   <span className="text-3xl font-black text-amber-400 tracking-tighter">
                     BA
                   </span>
@@ -827,10 +883,10 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
                     {estadoVoz === "iniciando" && "Conectando"}
                   </span>
                 </div>
-              </div>
+              </button>
 
               {/* Estado descriptivo en tiempo real */}
-              <div className="mt-6 flex flex-col items-center gap-1.5 text-center px-4">
+              <div className="mt-6 flex flex-col items-center gap-2 text-center px-4">
                 <div className="inline-flex items-center gap-2">
                   {estadoVoz === "pensando" && (
                     <Sparkles className="h-4 w-4 text-purple-400 animate-spin" />
@@ -846,14 +902,28 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
                 {/* Subtítulo dinámico con lo que el usuario habla */}
                 {transcripcionEnVivo ? (
-                  <p className="max-w-[300px] truncate rounded-lg bg-slate-800/80 px-2.5 py-1 text-xs font-medium text-cyan-300">
-                    &ldquo;{transcripcionEnVivo}&rdquo;
-                  </p>
+                  <div className="flex flex-col items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150">
+                    <p className="max-w-[340px] rounded-xl border border-cyan-500/40 bg-slate-900/95 px-3.5 py-2 text-xs font-medium text-cyan-200 shadow-lg shadow-cyan-950/40 leading-relaxed text-center">
+                      &ldquo;{transcripcionEnVivo}&rdquo;
+                    </p>
+                    {estadoVoz === "escuchando" && (
+                      <button
+                        type="button"
+                        onClick={enviarTurnoInmediato}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-500/15 px-3 py-1 text-[11px] font-semibold text-cyan-300 transition-all hover:bg-cyan-500/30 active:scale-95"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
+                        <span>Detectando voz · Tocá para enviar ya</span>
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <p className="text-[11px] text-slate-500">
                     {estadoVoz === "pensando"
                       ? "Evaluando escalón y guardrails de riesgo..."
-                      : "Filtro anti-ruido activo · Reconoce solo tu voz"}
+                      : estadoVoz === "hablando"
+                      ? "Podés hablar o tocar el círculo para interrumpir"
+                      : "Hablá naturalmente · Envío automático o tocá para enviar"}
                   </p>
                 )}
               </div>
