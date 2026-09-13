@@ -12,6 +12,7 @@ import {
   PhoneOff,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Terminal,
   Volume2,
   VolumeX,
@@ -66,6 +67,7 @@ interface ResultadoReconocimiento extends ArrayLike<AlternativaTranscripcion> {
 }
 
 interface EventoReconocimiento {
+  readonly resultIndex: number;
   readonly results: ArrayLike<ResultadoReconocimiento>;
 }
 
@@ -150,10 +152,9 @@ class TimbreTelefonico {
       osc1.frequency.setValueAtTime(440, t);
       osc2.frequency.setValueAtTime(480, t);
 
-      // Timbre suave con ataque y decaimiento (1.8s sonido + silencio)
       gain.gain.setValueAtTime(0.001, t);
-      gain.gain.exponentialRampToValueAtTime(0.15, t + 0.1);
-      gain.gain.setValueAtTime(0.15, t + 1.7);
+      gain.gain.exponentialRampToValueAtTime(0.14, t + 0.1);
+      gain.gain.setValueAtTime(0.14, t + 1.7);
       gain.gain.exponentialRampToValueAtTime(0.001, t + 1.9);
 
       osc1.connect(gain);
@@ -164,9 +165,7 @@ class TimbreTelefonico {
       osc2.start(t);
       osc1.stop(t + 2.0);
       osc2.stop(t + 2.0);
-    } catch {
-      // Ignorar excepciones de audio context
-    }
+    } catch {}
   }
 
   detener() {
@@ -200,7 +199,10 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
   const nombreCliente = NOMBRES_CLIENTES[slug] ?? slug;
 
-  // Referencias para el control de audio, timers y VAD
+  // Referencias para control de estado sin desincronización
+  const estadoVozRef = useRef<EstadoVoz>("iniciando");
+  estadoVozRef.current = estadoVoz;
+
   const timbreRef = useRef<TimbreTelefonico | null>(null);
   const reconocedorRef = useRef<Reconocedor | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -212,6 +214,8 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   const audioActualRef = useRef<HTMLAudioElement | null>(null);
   const conversacionIdRef = useRef<string | null>(null);
   const finLlamadaRef = useRef(false);
+  const procesandoRef = useRef(false);
+  const inicioHablaAgenteRef = useRef(0);
 
   conversacionIdRef.current = conversacionId;
 
@@ -227,7 +231,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     }
   }, [fase]);
 
-  // Cronómetro de llamada conectada
+  // Cronómetro de llamada
   useEffect(() => {
     if (fase !== "conectada") return;
     const interval = setInterval(() => {
@@ -236,7 +240,6 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     return () => clearInterval(interval);
   }, [fase]);
 
-  // Formato mm:ss
   const formatoTiempo = (segundos: number) => {
     const mins = Math.floor(segundos / 60);
     const segs = segundos % 60;
@@ -244,7 +247,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   };
 
   /**
-   * Detener audio del agente de inmediato (Barge-in / Interrupción)
+   * Interrumpe la voz del agente de inmediato
    */
   const interrumpirAgente = useCallback(() => {
     if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -258,93 +261,128 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   }, []);
 
   /**
-   * Reproduce la voz del agente (Piper local o Web Speech API)
+   * Detiene el reconocimiento de voz para no escuchar mientras piensa o habla
    */
-  const reproducirVozAgente = useCallback(
-    async (texto: string, audio?: { base64: string; mime: string } | null) => {
-      setEstadoVoz("hablando");
-
-      // Si el servidor mandó audio sintetizado de Piper
-      if (audio?.base64) {
-        return new Promise<number>((resolve) => {
-          interrumpirAgente();
-          const el = new Audio(`data:${audio.mime};base64,${audio.base64}`);
-          audioActualRef.current = el;
-          const t0 = Date.now();
-          let primerSonido = 0;
-
-          el.onplaying = () => {
-            primerSonido = Date.now() - t0;
-          };
-          el.onended = () => {
-            audioActualRef.current = null;
-            if (!finLlamadaRef.current) setEstadoVoz("escuchando");
-            resolve(primerSonido);
-          };
-          el.onerror = () => {
-            audioActualRef.current = null;
-            if (!finLlamadaRef.current) setEstadoVoz("escuchando");
-            resolve(0);
-          };
-
-          void el.play().catch(() => {
-            // Fallback a SpeechSynthesis si play es bloqueado
-            hablarNavegador(texto).then(resolve);
-          });
-        });
-      }
-
-      return hablarNavegador(texto);
-    },
-    [interrumpirAgente],
-  );
-
-  const hablarNavegador = (texto: string): Promise<number> => {
-    return new Promise((resolve) => {
-      if (typeof window === "undefined" || !window.speechSynthesis) {
-        if (!finLlamadaRef.current) setEstadoVoz("escuchando");
-        resolve(0);
-        return;
-      }
-      interrumpirAgente();
-      const enunciado = new SpeechSynthesisUtterance(texto);
-      const voz = elegirVoz();
-      if (voz) enunciado.voice = voz;
-      enunciado.lang = voz?.lang ?? "es-MX";
-      enunciado.rate = 1.05;
-
-      const t0 = Date.now();
-      let primerSonido = 0;
-
-      enunciado.onstart = () => {
-        primerSonido = Date.now() - t0;
-      };
-      enunciado.onend = () => {
-        if (!finLlamadaRef.current) setEstadoVoz("escuchando");
-        resolve(primerSonido);
-      };
-      enunciado.onerror = () => {
-        if (!finLlamadaRef.current) setEstadoVoz("escuchando");
-        resolve(primerSonido);
-      };
-
-      window.speechSynthesis.speak(enunciado);
-    });
-  };
+  const detenerReconocedor = useCallback(() => {
+    if (silencioTimerRef.current) {
+      clearTimeout(silencioTimerRef.current);
+      silencioTimerRef.current = null;
+    }
+    if (reconocedorRef.current) {
+      try {
+        reconocedorRef.current.abort();
+      } catch {}
+      reconocedorRef.current = null;
+    }
+  }, []);
 
   /**
-   * Envía el turno al servidor (`/api/voz`) y procesa la respuesta
+   * Inicia el reconocimiento de voz para el turno del usuario (limpio y sin acumulación)
+   */
+  const activarEscuchaUsuario = useCallback(() => {
+    if (finLlamadaRef.current || silenciado || procesandoRef.current) return;
+
+    detenerReconocedor();
+    textoBufferRef.current = "";
+    setTranscripcionEnVivo("");
+    setEstadoVoz("escuchando");
+
+    const Constructor = obtenerConstructorReconocedor();
+    if (!Constructor) return;
+
+    try {
+      const rec = new Constructor();
+      rec.lang = "es-SV";
+      rec.continuous = true;
+      rec.interimResults = true;
+
+      rec.onresult = (evento: EventoReconocimiento) => {
+        // Bloqueo estricto si el sistema está procesando
+        if (procesandoRef.current || finLlamadaRef.current) return;
+
+        // Si el agente estaba hablando, verificar si es un barge-in legítimo
+        if (estadoVozRef.current === "hablando") {
+          const tiempoHablando = Date.now() - inicioHablaAgenteRef.current;
+          // Evitar eco de los primeros 600ms del altavoz
+          if (tiempoHablando < 600) return;
+        }
+
+        let textoTurno = "";
+        for (let i = evento.resultIndex; i < evento.results.length; i++) {
+          const trans = evento.results[i][0]?.transcript;
+          if (trans) textoTurno += " " + trans;
+        }
+
+        const limpio = textoTurno.trim();
+        // Filtrar ruidos cortos, clics o artefactos (< 3 letras)
+        if (limpio.length >= 3) {
+          // Si el agente hablaba y el cliente dijo una palabra real -> Cortar al agente
+          if (estadoVozRef.current === "hablando") {
+            interrumpirAgente();
+            setEstadoVoz("escuchando");
+          }
+
+          textoBufferRef.current = limpio;
+          setTranscripcionEnVivo(limpio);
+
+          // Resetear temporizador de silencio (1.1s para permitir pausas naturales al hablar)
+          if (silencioTimerRef.current) {
+            clearTimeout(silencioTimerRef.current);
+          }
+
+          silencioTimerRef.current = setTimeout(() => {
+            const aEnviar = textoBufferRef.current.trim();
+            if (aEnviar.length >= 3 && !procesandoRef.current) {
+              detenerReconocedor();
+              void procesarTurno(aEnviar);
+            }
+          }, 1100);
+        }
+      };
+
+      rec.onerror = (e) => {
+        if (e.error !== "no-speech" && e.error !== "aborted") {
+          console.warn("STT estado:", e.error);
+        }
+      };
+
+      rec.onend = () => {
+        // Solo reanudar si todavía debemos estar escuchando y no estamos procesando ni hablando
+        if (
+          !finLlamadaRef.current &&
+          !procesandoRef.current &&
+          estadoVozRef.current === "escuchando"
+        ) {
+          try {
+            rec.start();
+          } catch {}
+        }
+      };
+
+      rec.start();
+      reconocedorRef.current = rec;
+    } catch (err) {
+      console.error("Error al arrancar STT:", err);
+    }
+  }, [silenciado, detenerReconocedor, interrumpirAgente]);
+
+  /**
+   * Envía el turno a Ollama y procesa la respuesta sin interrupciones
    */
   const procesarTurno = useCallback(
     async (texto: string) => {
       const convId = conversacionIdRef.current;
       if (!convId || !texto.trim() || finLlamadaRef.current) return;
 
+      // Candado de procesamiento
+      procesandoRef.current = true;
+      detenerReconocedor();
+      interrumpirAgente();
+
       setEstadoVoz("pensando");
       setTranscripcionEnVivo("");
-      textoBufferRef.current = "";
 
-      // Añadir mensaje del cliente a la auditoría
+      // Registrar mensaje en la auditoría
       setMensajes((prev) => [...prev, { rol: "cliente", texto }]);
 
       const tInicioLlm = Date.now();
@@ -362,7 +400,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         const json = (await res.json()) as RespuestaApi;
 
         if (!json.success || !json.data) {
-          // Si por alguna razón la conversación caducó, intentar reabrir de forma transparente
+          // Auto-recuperación si la conversación se perdió en el servidor
           if (json.error?.message?.includes("no existe")) {
             const reintento = await fetch("/api/voz", {
               method: "POST",
@@ -373,12 +411,14 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
             if (jsonReintento.success && jsonReintento.data) {
               setConversacionId(jsonReintento.data.conversacionId);
               conversacionIdRef.current = jsonReintento.data.conversacionId;
+              procesandoRef.current = false;
               await procesarTurno(texto);
               return;
             }
           }
-          setErrorAviso(json.error?.message ?? "Error en la llamada");
-          setEstadoVoz("escuchando");
+          setErrorAviso(json.error?.message ?? "Error en el turno");
+          procesandoRef.current = false;
+          activarEscuchaUsuario();
           return;
         }
 
@@ -400,103 +440,104 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
           setCerrada(true);
         }
 
-        // Hablar respuesta
+        // Reproducir la respuesta del agente
+        procesandoRef.current = false;
         if (textoRespuesta) {
           await reproducirVozAgente(json.data.hablado ?? textoRespuesta, json.data.audio);
         } else {
-          setEstadoVoz("escuchando");
+          activarEscuchaUsuario();
         }
       } catch (err) {
         setErrorAviso(err instanceof Error ? err.message : "Falla en comunicación");
-        setEstadoVoz("escuchando");
+        procesandoRef.current = false;
+        activarEscuchaUsuario();
       }
     },
-    [slug, reproducirVozAgente],
+    [slug, detenerReconocedor, interrumpirAgente, activarEscuchaUsuario],
   );
 
   /**
-   * Inicia el reconocedor de voz continuo y el analizador de volumen para VAD y Barge-in
+   * Reproduce la voz del agente (Piper local o Web Speech API)
    */
-  const iniciarVAD = useCallback(() => {
-    const Constructor = obtenerConstructorReconocedor();
-    if (!Constructor) {
-      setErrorAviso("Tu navegador no soporta reconocimiento de voz continuo.");
-      return;
-    }
+  const reproducirVozAgente = useCallback(
+    async (texto: string, audio?: { base64: string; mime: string } | null) => {
+      setEstadoVoz("hablando");
+      inicioHablaAgenteRef.current = Date.now();
 
-    try {
-      const rec = new Constructor();
-      rec.lang = "es-SV";
-      rec.continuous = true;
-      rec.interimResults = true;
-
-      rec.onresult = (evento: EventoReconocimiento) => {
-        if (silenciado || finLlamadaRef.current) return;
-
-        let interino = "";
-        let final = "";
-
-        for (let i = 0; i < evento.results.length; i++) {
-          const res = evento.results[i];
-          if (res.isFinal) {
-            final += res[0].transcript;
-          } else {
-            interino += res[0].transcript;
-          }
-        }
-
-        const textoDetectado = (final || interino).trim();
-
-        if (textoDetectado.length > 0) {
-          // BARGE-IN: Si el agente estaba hablando y el usuario empieza a hablar, cortar al agente
+      // Audio WAV neuronal de Piper
+      if (audio?.base64) {
+        return new Promise<void>((resolve) => {
           interrumpirAgente();
-          setEstadoVoz("escuchando");
-          setTranscripcionEnVivo(textoDetectado);
-          textoBufferRef.current = textoDetectado;
+          const el = new Audio(`data:${audio.mime};base64,${audio.base64}`);
+          audioActualRef.current = el;
 
-          // VAD: Resetear el timer de silencio
-          if (silencioTimerRef.current) {
-            clearTimeout(silencioTimerRef.current);
-          }
-
-          // Esperar 900 ms de silencio para disparar el turno
-          silencioTimerRef.current = setTimeout(() => {
-            const textoFinal = textoBufferRef.current;
-            if (textoFinal.length > 0) {
-              void procesarTurno(textoFinal);
+          el.onended = () => {
+            audioActualRef.current = null;
+            if (!finLlamadaRef.current) {
+              setTimeout(() => activarEscuchaUsuario(), 300);
             }
-          }, 950);
+            resolve();
+          };
+
+          el.onerror = () => {
+            audioActualRef.current = null;
+            if (!finLlamadaRef.current) activarEscuchaUsuario();
+            resolve();
+          };
+
+          void el.play().catch(() => {
+            hablarNavegador(texto).then(resolve);
+          });
+        });
+      }
+
+      // Síntesis nativa del navegador
+      return hablarNavegador(texto);
+    },
+    [interrumpirAgente, activarEscuchaUsuario],
+  );
+
+  const hablarNavegador = (texto: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (typeof window === "undefined" || !window.speechSynthesis) {
+        if (!finLlamadaRef.current) activarEscuchaUsuario();
+        resolve();
+        return;
+      }
+      interrumpirAgente();
+      const enunciado = new SpeechSynthesisUtterance(texto);
+      const voz = elegirVoz();
+      if (voz) enunciado.voice = voz;
+      enunciado.lang = voz?.lang ?? "es-MX";
+      enunciado.rate = 1.02;
+
+      enunciado.onend = () => {
+        if (!finLlamadaRef.current) {
+          setTimeout(() => activarEscuchaUsuario(), 300);
         }
+        resolve();
+      };
+      enunciado.onerror = () => {
+        if (!finLlamadaRef.current) activarEscuchaUsuario();
+        resolve();
       };
 
-      rec.onerror = (e) => {
-        if (e.error !== "no-speech") {
-          console.warn("STT warn:", e.error);
-        }
-      };
-
-      rec.onend = () => {
-        // Reconectar si la llamada sigue activa y no fue colgada
-        if (!finLlamadaRef.current && !silenciado) {
-          try {
-            rec.start();
-          } catch {}
-        }
-      };
-
-      rec.start();
-      reconocedorRef.current = rec;
-    } catch (err) {
-      console.error("Error al iniciar SpeechRecognition:", err);
-    }
-  }, [silenciado, interrumpirAgente, procesarTurno]);
+      window.speechSynthesis.speak(enunciado);
+    });
+  };
 
   /**
-   * Inicia el análisis de audio para el visualizador dinámico
+   * Inicia el análisis de audio con cancelación de eco para el visualizador
    */
   const iniciarAnalizadorAudio = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       micStreamRef.current = stream;
 
       const AudioCtx =
@@ -526,12 +567,12 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       };
       loop();
     } catch (err) {
-      console.warn("No se pudo iniciar el visualizador de audio:", err);
+      console.warn("Visualizador micrófono:", err);
     }
   }, []);
 
   /**
-   * Contestar llamada: Desbloquea audio, detiene timbre, conecta e inicia sesión
+   * Contestar llamada entrante
    */
   const contestarLlamada = async () => {
     if (timbreRef.current) {
@@ -540,12 +581,10 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     setFase("conectada");
     setEstadoVoz("iniciando");
     finLlamadaRef.current = false;
+    procesandoRef.current = true;
 
-    // Desbloquear AudioContext y arrancar micrófonos
     await iniciarAnalizadorAudio();
-    iniciarVAD();
 
-    // Iniciar llamada en el servidor
     try {
       const res = await fetch("/api/voz", {
         method: "POST",
@@ -555,8 +594,9 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       const json = (await res.json()) as RespuestaApi;
 
       if (!json.success || !json.data) {
-        setErrorAviso(json.error?.message ?? "No se pudo iniciar la sesión de voz");
-        setEstadoVoz("escuchando");
+        setErrorAviso(json.error?.message ?? "Error al abrir la sesión");
+        procesandoRef.current = false;
+        activarEscuchaUsuario();
         return;
       }
 
@@ -564,34 +604,30 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       conversacionIdRef.current = json.data.conversacionId;
       setMensajes(json.data.turnos);
 
-      // Reproducir saludo inicial del agente
       const saludo = json.data.turnos[0]?.texto;
+      procesandoRef.current = false;
       if (saludo) {
         await reproducirVozAgente(json.data.hablado ?? saludo, json.data.audio);
       } else {
-        setEstadoVoz("escuchando");
+        activarEscuchaUsuario();
       }
     } catch (err) {
       setErrorAviso(err instanceof Error ? err.message : "Error al conectar llamada");
-      setEstadoVoz("escuchando");
+      procesandoRef.current = false;
+      activarEscuchaUsuario();
     }
   };
 
   /**
-   * Rechazar o colgar llamada
+   * Colgar llamada y limpiar recursos
    */
   const colgarLlamada = () => {
     finLlamadaRef.current = true;
+    procesandoRef.current = false;
     if (timbreRef.current) timbreRef.current.detener();
+    detenerReconocedor();
     interrumpirAgente();
 
-    if (silencioTimerRef.current) clearTimeout(silencioTimerRef.current);
-    if (reconocedorRef.current) {
-      try {
-        reconocedorRef.current.abort();
-      } catch {}
-      reconocedorRef.current = null;
-    }
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -617,19 +653,12 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       });
     }
     if (nuevo) {
-      if (reconocedorRef.current) {
-        try {
-          reconocedorRef.current.abort();
-        } catch {}
-      }
+      detenerReconocedor();
       setEstadoVoz("silenciado");
     } else {
-      if (reconocedorRef.current) {
-        try {
-          reconocedorRef.current.start();
-        } catch {}
+      if (estadoVozRef.current !== "hablando" && estadoVozRef.current !== "pensando") {
+        activarEscuchaUsuario();
       }
-      setEstadoVoz("escuchando");
     }
   };
 
@@ -637,6 +666,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   useEffect(() => {
     return () => {
       finLlamadaRef.current = true;
+      procesandoRef.current = false;
       if (timbreRef.current) timbreRef.current.detener();
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
@@ -677,7 +707,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
       </button>
 
       {/* Frame estilo Smartphone de alta gama */}
-      <div className="relative z-10 mx-auto flex h-[820px] w-full max-w-[400px] flex-col justify-between overflow-hidden rounded-[48px] border border-slate-800/80 bg-slate-900/90 p-7 shadow-2xl shadow-black/80 backdrop-blur-xl">
+      <div className="relative z-10 mx-auto flex h-[820px] w-full max-w-[400px] flex-col justify-between overflow-hidden rounded-[48px] border border-slate-800/80 bg-slate-900/95 p-7 shadow-2xl shadow-black/80 backdrop-blur-xl">
         {/* ========================================================
             FASE 1: PANTALLA DE LLAMADA ENTRANTE (INCOMING CALL)
            ======================================================== */}
@@ -695,18 +725,16 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
               <p className="mt-1 text-sm text-slate-400">
                 Acompañamiento Financiero Preventivo
               </p>
-              <p className="text-xs text-slate-500">
-                Para: <span className="text-slate-300 font-medium">{nombreCliente}</span>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Cliente: <span className="text-slate-300 font-medium">{nombreCliente}</span>
               </p>
             </div>
 
             {/* Avatar central con ondas concéntricas palpitantes */}
             <div className="relative my-auto flex items-center justify-center">
-              {/* Ondas concéntricas animadas */}
               <div className="absolute h-44 w-44 animate-ping rounded-full bg-amber-500/15" />
               <div className="absolute h-56 w-56 animate-pulse rounded-full border border-amber-500/20 bg-blue-600/10" />
 
-              {/* Logo / Avatar */}
               <div className="relative flex h-32 w-32 items-center justify-center rounded-full border-2 border-amber-400/80 bg-gradient-to-tr from-slate-900 via-blue-950 to-slate-900 shadow-2xl shadow-amber-500/20">
                 <span className="text-3xl font-black tracking-tighter text-amber-400">
                   BA
@@ -716,7 +744,6 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
             {/* Botones de acción: Rechazar y Contestar */}
             <div className="mb-4 flex items-center justify-around px-4">
-              {/* Rechazar */}
               <div className="flex flex-col items-center gap-2">
                 <button
                   onClick={colgarLlamada}
@@ -727,7 +754,6 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
                 <span className="text-xs font-medium text-slate-400">Rechazar</span>
               </div>
 
-              {/* Contestar */}
               <div className="flex flex-col items-center gap-2">
                 <button
                   onClick={contestarLlamada}
@@ -743,7 +769,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         )}
 
         {/* ========================================================
-            FASE 2: INTERFAZ EN LLAMADA ACTIVA (ZERO CHAT TEXT)
+            FASE 2: INTERFAZ EN LLAMADA ACTIVA (CERO CHAT)
            ======================================================== */}
         {fase === "conectada" && (
           <div className="flex h-full flex-col justify-between py-4">
@@ -765,46 +791,69 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
               <div
                 className={`absolute rounded-full transition-all duration-300 ${
                   estadoVoz === "hablando"
-                    ? "h-56 w-56 bg-amber-500/20 blur-xl animate-pulse"
+                    ? "h-56 w-56 bg-amber-500/25 blur-xl animate-pulse"
                     : estadoVoz === "escuchando"
                     ? "h-56 w-56 bg-cyan-500/20 blur-xl"
                     : estadoVoz === "pensando"
-                    ? "h-56 w-56 bg-purple-500/20 blur-xl animate-ping"
+                    ? "h-56 w-56 bg-purple-500/20 blur-xl animate-pulse"
                     : "h-44 w-44 bg-slate-800/20 blur-md"
                 }`}
                 style={{
-                  transform: `scale(${1 + nivelVolumen / 200})`,
+                  transform: `scale(${1 + nivelVolumen / 180})`,
                 }}
               />
 
               {/* Avatar central */}
-              <div className="relative z-10 flex h-36 w-36 items-center justify-center rounded-full border-2 border-slate-700 bg-slate-900 shadow-2xl">
+              <div
+                className={`relative z-10 flex h-36 w-36 items-center justify-center rounded-full border-2 bg-slate-900 shadow-2xl transition-colors duration-300 ${
+                  estadoVoz === "hablando"
+                    ? "border-amber-400"
+                    : estadoVoz === "escuchando"
+                    ? "border-cyan-400"
+                    : estadoVoz === "pensando"
+                    ? "border-purple-400 animate-pulse"
+                    : "border-slate-700"
+                }`}
+              >
                 <div className="flex flex-col items-center">
                   <span className="text-3xl font-black text-amber-400 tracking-tighter">
                     BA
                   </span>
-                  <span className="text-[10px] font-medium text-slate-400">Voz AI</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    {estadoVoz === "hablando" && "Hablando"}
+                    {estadoVoz === "escuchando" && "Escuchando"}
+                    {estadoVoz === "pensando" && "Pensando"}
+                    {estadoVoz === "silenciado" && "Mudo"}
+                    {estadoVoz === "iniciando" && "Conectando"}
+                  </span>
                 </div>
               </div>
 
               {/* Estado descriptivo en tiempo real */}
-              <div className="mt-6 flex flex-col items-center gap-1.5 text-center">
-                <p className="text-sm font-semibold tracking-wide text-slate-200">
-                  {estadoVoz === "hablando" && "Bancoagrícola hablando…"}
-                  {estadoVoz === "escuchando" && "Escuchándote (Manos libres)…"}
-                  {estadoVoz === "pensando" && "Evaluando opciones válidas…"}
-                  {estadoVoz === "silenciado" && "Micrófono silenciado"}
-                  {estadoVoz === "iniciando" && "Conectando llamada…"}
-                </p>
+              <div className="mt-6 flex flex-col items-center gap-1.5 text-center px-4">
+                <div className="inline-flex items-center gap-2">
+                  {estadoVoz === "pensando" && (
+                    <Sparkles className="h-4 w-4 text-purple-400 animate-spin" />
+                  )}
+                  <p className="text-sm font-semibold tracking-wide text-slate-200">
+                    {estadoVoz === "hablando" && "Bancoagrícola hablando…"}
+                    {estadoVoz === "escuchando" && "Te escucho, podés hablar libremente…"}
+                    {estadoVoz === "pensando" && "Ollama (llama3.1) razonando…"}
+                    {estadoVoz === "silenciado" && "Micrófono silenciado"}
+                    {estadoVoz === "iniciando" && "Iniciando llamada…"}
+                  </p>
+                </div>
 
-                {/* Subtítulo dinámico sutil cuando habla el usuario */}
+                {/* Subtítulo dinámico con lo que el usuario habla */}
                 {transcripcionEnVivo ? (
-                  <p className="max-w-[280px] truncate text-xs text-cyan-300/80 italic animate-pulse">
+                  <p className="max-w-[300px] truncate rounded-lg bg-slate-800/80 px-2.5 py-1 text-xs font-medium text-cyan-300">
                     &ldquo;{transcripcionEnVivo}&rdquo;
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-500">
-                    Barge-in activo · Podés hablar en cualquier momento
+                    {estadoVoz === "pensando"
+                      ? "Evaluando escalón y guardrails de riesgo..."
+                      : "Filtro anti-ruido activo · Reconoce solo tu voz"}
                   </p>
                 )}
               </div>
@@ -814,9 +863,11 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
                 {[0.4, 0.8, 1.2, 0.6, 1.4, 0.9, 0.5, 1.1, 0.7].map((factor, i) => {
                   const altura =
                     estadoVoz === "hablando"
-                      ? 12 + Math.sin(Date.now() / 200 + i) * 12
+                      ? 14 + Math.sin(Date.now() / 200 + i) * 12
                       : estadoVoz === "escuchando"
                       ? Math.max(4, (nivelVolumen * factor) / 2.5)
+                      : estadoVoz === "pensando"
+                      ? 8 + Math.sin(Date.now() / 300 + i) * 6
                       : 4;
                   return (
                     <span
@@ -826,6 +877,8 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
                           ? "bg-amber-400"
                           : estadoVoz === "escuchando"
                           ? "bg-cyan-400"
+                          : estadoVoz === "pensando"
+                          ? "bg-purple-400"
                           : "bg-slate-700"
                       }`}
                       style={{ height: `${Math.min(32, Math.max(4, altura))}px` }}
