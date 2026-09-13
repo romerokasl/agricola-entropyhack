@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Apertura } from "@/lib/agent/types";
 
+import { aBase64, GrabadorVoz } from "./grabador";
+
 /**
  * Llamada con el agente: push-to-talk, transcripción visible y latencia por etapa.
  *
@@ -39,6 +41,9 @@ interface RespuestaApi {
     conversacionId: string;
     cliente?: { nombre: string };
     turnos: Mensaje[];
+    /** Lo que el STT del servidor entendió. Se muestra tal cual: si se equivoca, se ve. */
+    transcripcion?: string;
+    capacidades?: { sttEnServidor: boolean; ttsEnServidor: boolean };
     /** El mismo texto, normalizado para pronunciarlo. Se muestra `texto`, se habla esto. */
     hablado?: string;
     /** Audio sintetizado en el servidor. `null` = que hable el navegador. */
@@ -129,9 +134,12 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   const [soportado, setSoportado] = useState(true);
   /** Audio que el navegador no dejó sonar solo, a la espera de un toque. */
   const [pendiente, setPendiente] = useState<{ base64: string; mime: string } | null>(null);
+  /** Lo dice el servidor al iniciar: si transcribe él, se le manda audio en vez de texto. */
+  const [sttEnServidor, setSttEnServidor] = useState(false);
 
   const iniciado = useRef(false);
   const reconocedor = useRef<Reconocedor | null>(null);
+  const grabador = useRef<GrabadorVoz | null>(null);
   const transcripcion = useRef("");
   /** Respaldo: si soltás antes de que el motor marque un resultado como final. */
   const ultimoParcial = useRef("");
@@ -217,6 +225,45 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     [hablar, reproducir],
   );
 
+  /** Camino con STT de servidor: viaja el audio y vuelve la transcripción hecha acá. */
+  const enviarAudio = useCallback(
+    async (wav: Blob) => {
+      const id = conversacionIdRef.current;
+      if (!id) return;
+
+      setEstado("pensando");
+      try {
+        const audioBase64 = await aBase64(wav);
+        const res = await fetch("/api/voz", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accion: "audio", conversacionId: id, audioBase64 }),
+        });
+        const json = (await res.json()) as RespuestaApi;
+        if (!json.success || !json.data) {
+          setAviso(json.error?.message ?? "No se pudo enviar el audio.");
+          setEstado("inactivo");
+          return;
+        }
+        if (json.data.transcripcion) {
+          setMensajes((prev) => [...prev, { rol: "cliente", texto: json.data!.transcripcion! }]);
+        }
+        if (json.data.cerrada) setCerrada(true);
+        await decirTurnoDelAgente(
+          json.data.turnos,
+          json.data.hablado,
+          json.data.audio,
+          json.data.metricas?.latenciaLlmMs ?? null,
+          json.data.metricas?.latenciaSttMs ?? null,
+        );
+      } catch {
+        setAviso("No se pudo conectar con el servicio.");
+        setEstado("inactivo");
+      }
+    },
+    [decirTurnoDelAgente],
+  );
+
   const enviarTexto = useCallback(
     async (texto: string, sttMs: number) => {
       const id = conversacionIdRef.current;
@@ -275,6 +322,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         }
         setConversacionId(json.data.conversacionId);
         conversacionIdRef.current = json.data.conversacionId;
+        setSttEnServidor(json.data.capacidades?.sttEnServidor ?? false);
         await decirTurnoDelAgente(
           json.data.turnos,
           json.data.hablado,
@@ -309,14 +357,28 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   const empezarAHablar = useCallback(() => {
     if (estado !== "inactivo" || cerrada || conversacionId === null) return;
 
+    // El agente puede estar todavía hablando: callarlo al tomar la palabra.
+    window.speechSynthesis.cancel();
+
+    // Con STT de servidor se graba el audio crudo; el navegador no transcribe nada.
+    if (sttEnServidor) {
+      const nuevo = new GrabadorVoz();
+      grabador.current = nuevo;
+      setAviso(null);
+      setEstado("escuchando");
+      void nuevo.empezar().catch(() => {
+        grabador.current = null;
+        setAviso("Necesito permiso del micrófono para escucharte.");
+        setEstado("inactivo");
+      });
+      return;
+    }
+
     const Constructor = obtenerConstructorReconocedor();
     if (!Constructor) {
       setSoportado(false);
       return;
     }
-
-    // El agente puede estar todavía hablando: callarlo al tomar la palabra.
-    window.speechSynthesis.cancel();
 
     const rec = new Constructor();
     rec.lang = "es-SV";
@@ -371,16 +433,36 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     setAviso(null);
     setEstado("escuchando");
     rec.start();
-  }, [estado, cerrada, conversacionId, enviarTexto]);
+  }, [estado, cerrada, conversacionId, sttEnServidor, enviarTexto]);
 
   const dejarDeHablar = useCallback(() => {
     if (estado !== "escuchando") return;
     finEscucha.current = Date.now();
     setEstado("pensando");
-    reconocedor.current?.stop();
-  }, [estado]);
 
-  const puedeHablar = estado === "inactivo" && !cerrada && conversacionId !== null && soportado;
+    if (sttEnServidor) {
+      const activo = grabador.current;
+      grabador.current = null;
+      if (!activo) {
+        setEstado("inactivo");
+        return;
+      }
+      void activo
+        .detener()
+        .then(({ wav }) => enviarAudio(wav))
+        .catch(() => {
+          setAviso("No se pudo procesar el audio.");
+          setEstado("inactivo");
+        });
+      return;
+    }
+
+    reconocedor.current?.stop();
+  }, [estado, sttEnServidor, enviarAudio]);
+
+  // Con STT de servidor no hace falta que el navegador reconozca voz: solo graba.
+  const faltaSoporte = !sttEnServidor && !soportado;
+  const puedeHablar = estado === "inactivo" && !cerrada && conversacionId !== null && !faltaSoporte;
 
   return (
     <div className="mx-auto flex h-screen max-w-lg flex-col bg-agricola-bg">
@@ -426,7 +508,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
           </div>
         )}
 
-        {!soportado && (
+        {faltaSoporte && (
           <p className="rounded-card bg-agricola-yellow-light px-3 py-2 text-center text-xs text-agricola-dark">
             Este navegador no reconoce voz. Usá Chrome o Edge, o seguí la conversación por
             escrito en <span className="font-semibold">/chat/{slug}</span>.

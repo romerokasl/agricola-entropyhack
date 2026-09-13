@@ -72,31 +72,51 @@ pipeline/
 │   ├── model-selection.md
 │   └── plan-implementacion.md      (orden de construcción y qué queda fuera)
 ├── normalizador.ts                 ✅ texto escrito → texto pronunciable
+├── stt.ts                          ✅ adaptador de STT (whisper.cpp local)
 ├── tts.ts                          ✅ adaptador de TTS (Piper local)
-├── stt.ts                          ⏳ adaptador de STT
 └── bin/                            (gitignored — se baja con npm run voz:instalar)
 ```
 
 La orquestación no vive acá: es `app/api/voz/route.ts`, un envoltorio delgado sobre
-`lib/agent/sesion.ts`.
+`lib/agent/sesion.ts`. El grabador del navegador (captura WAV 16 kHz sin depender de
+ffmpeg) está junto a la pantalla, en `app/voz/[cliente]/grabador.ts`.
 
-## Instalación del motor de voz local
+## Instalación de los motores locales
 
-Los binarios y modelos pesan ~80 MB y no se versionan:
+Los binarios y modelos pesan ~230 MB y no se versionan:
 
 ```bash
 npm run voz:instalar
 ```
 
-Baja Piper y la voz `es_MX-ald-medium` a `bin/`. Es idempotente. Después, en
-`.env.local`:
+Baja Piper con la voz `es_MX-ald-medium` y whisper.cpp con `ggml-base.bin`. Es
+idempotente. Después, en `.env.local`:
 
 ```
+STT_PROVIDER=whisper    # sin esta variable, transcribe el navegador
 TTS_PROVIDER=piper      # sin esta variable, habla el navegador
 ```
 
-Medido en la laptop de desarrollo: factor de tiempo real **0.059** — 17 s de audio
-sintetizados en 1.5 s, sin cuenta, sin tarjeta y sin límite de caracteres.
+Los dos son locales: sin cuenta, sin tarjeta y sin límite de uso — el mismo criterio que
+llevó a Ollama para el LLM.
+
+### Por qué importa quién transcribe
+
+Con `STT_PROVIDER=whisper` la transcripción la produce **el servidor**, así que vale como
+evidencia técnica. Con `navegador` la produce el cliente y solo la afirma, que es más
+débil frente al requisito del banco de entregar *"transcripción y resultado registrado"*.
+
+### Latencias medidas, turno completo
+
+| Etapa | Medido |
+|---|---|
+| STT (whisper `base`, 6 s de audio) | ~1.6 s |
+| LLM (Gemini Flash) | ~5 s |
+| TTS (Piper, 17 s de audio) | ~1.9 s |
+
+Piper sintetiza con factor de tiempo real **0.059**. El modelo de Whisper es `base` y no
+`small` a propósito: multilingüe igual, ~3× más rápido, y con `small` la etapa STT se come
+el presupuesto de latencia del turno.
 
 ## El normalizador, y por qué el orden importa
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { continuarConversacion, ErrorSesion, iniciarConversacion } from "@/lib/agent/sesion";
 import { normalizarParaVoz } from "@/voice/pipeline/normalizador";
+import { obtenerSttProvider } from "@/voice/pipeline/stt";
 import { obtenerTtsProvider } from "@/voice/pipeline/tts";
 
 /**
@@ -40,7 +41,23 @@ const EsquemaMensaje = z.object({
   latenciaSttMs: z.number().int().nonnegative().max(600_000).optional(),
 });
 
-const EsquemaPeticion = z.discriminatedUnion("accion", [EsquemaIniciar, EsquemaMensaje]);
+/**
+ * Turno hablado: llega el audio crudo y lo transcribe el servidor. Es la diferencia que
+ * le importa al jurado — con esta rama la transcripción es evidencia producida acá, no
+ * algo que afirmó el cliente.
+ */
+const EsquemaAudio = z.object({
+  accion: z.literal("audio"),
+  conversacionId: z.string().uuid(),
+  /** WAV PCM 16 bits mono 16 kHz, en base64. */
+  audioBase64: z.string().min(1).max(20_000_000),
+});
+
+const EsquemaPeticion = z.discriminatedUnion("accion", [
+  EsquemaIniciar,
+  EsquemaMensaje,
+  EsquemaAudio,
+]);
 
 function error(code: string, message: string, status: number) {
   return NextResponse.json({ success: false, error: { code, message } }, { status });
@@ -129,6 +146,14 @@ export async function POST(req: NextRequest) {
           turnos: inicio.turnos,
           hablado: habladoInicio,
           audio: audioInicio,
+          // El cliente necesita saber qué etapas corren acá: con STT de servidor manda
+          // audio, sin él transcribe con la Web Speech API y manda texto.
+          // Se derivan del proveedor configurado, no de si este turno produjo audio:
+          // cuando abre la persona no hay turno del agente y `audioInicio` es null.
+          capacidades: {
+            sttEnServidor: obtenerSttProvider() !== null,
+            ttsEnServidor: obtenerTtsProvider() !== null,
+          },
           ...(inicio.turno
             ? {
                 metricas: {
@@ -142,7 +167,33 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { conversacionId, texto, latenciaSttMs } = parsed.data;
+    // Los dos caminos convergen acá: lo único que cambia es de dónde salió el texto.
+    let texto: string;
+    let latenciaSttMs: number | null;
+
+    if (parsed.data.accion === "audio") {
+      const proveedor = obtenerSttProvider();
+      if (!proveedor) {
+        return error(
+          "STT_NO_CONFIGURADO",
+          'Llegó audio pero STT_PROVIDER es "navegador". Mandá texto o configurá "whisper".',
+          400,
+        );
+      }
+      const transcripcion = await proveedor.transcribir(
+        Buffer.from(parsed.data.audioBase64, "base64"),
+      );
+      if (transcripcion.texto.length === 0) {
+        return error("SIN_VOZ", "No se entendió nada en el audio.", 422);
+      }
+      texto = transcripcion.texto;
+      latenciaSttMs = transcripcion.latenciaMs;
+    } else {
+      texto = parsed.data.texto;
+      latenciaSttMs = parsed.data.latenciaSttMs ?? null;
+    }
+
+    const { conversacionId } = parsed.data;
     const respuesta = await continuarConversacion({ conversacionId, texto });
 
     const hablado = normalizarParaVoz(respuesta.turno.texto);
@@ -152,6 +203,9 @@ export async function POST(req: NextRequest) {
       success: true,
       data: {
         conversacionId: respuesta.conversacionId,
+        // Lo que se transcribió, para que la persona vea en pantalla lo que el sistema
+        // entendió. Si el STT se equivoca, se nota — no se esconde.
+        transcripcion: texto,
         turnos: [{ rol: "agente", texto: respuesta.turno.texto }],
         hablado,
         audio,
@@ -160,7 +214,7 @@ export async function POST(req: NextRequest) {
           // `latenciaMs` es el campo común con S2S. El desglose por etapa es el extra
           // que solo la cascada puede dar.
           latenciaMs: respuesta.turno.latenciaMs,
-          latenciaSttMs: latenciaSttMs ?? null,
+          latenciaSttMs,
           latenciaLlmMs: respuesta.turno.latenciaMs,
           latenciaTtsMs: audio?.latenciaMs ?? null,
           validadorOk: respuesta.turno.validadorOk,
