@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "../supabase";
 import type { BandaRiesgo, Cliente, TipoIngreso } from "../agent/types";
 import { conReintentos } from "./reintentos";
 
-interface FilaCliente {
+export interface FilaCliente {
   id: string;
   slug: string;
   nombre: string;
@@ -23,10 +23,10 @@ interface FilaCliente {
   riesgo_banda: string | null;
 }
 
-const COLUMNAS =
+export const COLUMNAS_CLIENTE =
   "id, slug, nombre, edad, distrito, segmento, tipo_ingreso, dia_ingreso_1, dia_ingreso_2, dia_remesa, producto, cuota, saldo, dia_pago, dias_atraso, tiene_debito_automatico, riesgo_score, riesgo_banda";
 
-function aCliente(fila: FilaCliente): Cliente {
+export function aCliente(fila: FilaCliente): Cliente {
   return {
     id: fila.id,
     slug: fila.slug,
@@ -55,7 +55,7 @@ function buscarPor(campo: "slug" | "id", valor: string): Promise<Cliente | null>
   return conReintentos(`No se pudo leer el cliente ${valor}`, async () => {
     const { data, error } = await getSupabaseAdmin()
       .from("clientes")
-      .select(COLUMNAS)
+      .select(COLUMNAS_CLIENTE)
       .eq(campo, valor)
       .maybeSingle<FilaCliente>();
 
