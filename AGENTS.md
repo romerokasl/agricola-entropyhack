@@ -1,47 +1,57 @@
 # AGENTS.md — Directrices para Asistentes de IA y Equipo de Desarrollo
 
-Este documento es el punto de referencia único y normativo para cualquier asistente de IA (Antigravity, Cursor, Claude Code, GitHub Copilot) y para los 4 integrantes del equipo durante el hackathon **Bancoagrícola EntropyHack**.
+Este documento es el punto de referencia único y normativo para cualquier asistente de IA (Antigravity, Cursor, Claude Code, GitHub Copilot) y para los 4 integrantes del equipo durante el hackathon **Bancoagrícola EntropyHack 2026**.
 
 ---
 
-## 1. Misión del Proyecto
+## 1. Misión del Proyecto y Diferenciadores Oficiales
 
-> **Reto:** *"¿Cómo evitar que un usuario caiga en mora antes de que suceda? La cobranza tradicional reacciona tarde, y la falta de seguimiento oportuno provoca que miles de personas arruinen su historial crediticio. Transforma la cobranza en una experiencia empática con enfoque preventivo que vela por el récord crediticio de los usuarios."*
+> **Plataforma**: **Anticipa Bancoagrícola** — Motor Predictivo, Cobranza Empática y Rentabilidad Activa.
+>
+> **Reto**: *"¿Cómo evitar que un usuario caiga en mora antes de que suceda? La cobranza tradicional reacciona tarde, y la falta de seguimiento oportuno provoca que miles de personas arruinen su historial crediticio. Transforma la cobranza en una experiencia empática con enfoque preventivo que vela por el récord crediticio de los usuarios."*
 
-* **El Core Técnico**: Modelo de ML preventivo (LightGBM/XGBoost) entrenado con 300k-500k registros que detecta patrones de estrés financiero 15-45 días antes de la fecha de corte.
-* **La Experiencia (UX)**: Interfaz empática inspirada en la marca **Banco Agrícola (Grupo Bancolombia)** que ofrece soluciones oportunas (reestructuración sin penalización, diferimiento, asesoría financiera y micro-pagos) protegiendo el historial crediticio del salvadoreño.
+La solución se sostiene sobre **tres pilares innegociables**:
+
+1. **Precisión Auditable (Cumplimiento SSF)**:
+   * Motor predictivo con valores explicables **SHAP**, garantizando predictibilidad 100% transparente y auditable ante la Superintendencia del Sistema Financiero (SSF) y la normativa NCB-022.
+2. **Cobranza Empática y Accionable**:
+   * Comprensión del contexto salvadoreño (quincena 15/30, remesas, ventana legal de buró de 10 días, red de 890+ corresponsales) sin amenazas ni coerción.
+   * Mapeo automatizado a productos reales de Bancoagrícola mediante una escalera de 8 opciones gobernada por código duro.
+3. **Rentabilidad Activa (Monetización Tier A)**:
+   * Identificación automatizada de perfiles con deuda saldada o 0 días de atraso (**Tier A Prime**) para desplegar oportunidades de **cross-selling y up-selling** (Adelanto de Salario, Extrafinanciamiento limpio, upgrade de productos).
 
 ---
 
-## 2. Arquitectura del Repositorio (Monorepo Modular)
+## 2. Arquitectura del Repositorio
 
 ```
 agricola-entropyhack/
 ├── .agents/                    # Habilidades y runbooks para agentes de IA
-│   └── skills/
-│       ├── backend/            # APIs, Next.js route handlers, Supabase
-│       ├── security/           # PII, Fintech security, RLS, secretos
-│       ├── health-checks/      # Endpoints /api/health y /health
-│       └── bancoagricola-ui/   # Brand guidelines, tokens y UX empática
-├── app/                        # Next.js 14+ App Router (Frontend + BFF)
+│   └── skills/                 # shadcn, motion, backend, security, bancoagricola-ui
+├── app/                        # Next.js 14 App Router
 │   ├── api/
+│   │   ├── chat/               # Orquestador del agente conversacional por turnos
 │   │   ├── health/             # Health check probe del sistema
-│   │   └── predict/            # Proxy de inferencia (con Smart Fallback)
-│   ├── layout.tsx              # Shell corporativo con diseño Bancoagrícola
-│   ├── page.tsx                # Dashboard de salud crediticia preventiva
+│   │   └── predict/            # Proxy de inferencia ML con Smart Fallback
+│   ├── chat/[cliente]/         # Canal conversacional estilo WhatsApp (Outbound/Inbound)
+│   ├── layout.tsx              # Shell corporativo Bancoagrícola
+│   ├── page.tsx                # Página principal / acceso a demos y dashboard
 │   └── globals.css             # Estilos globales y tokens CSS
-├── ml/                         # Módulo de Machine Learning (Python)
-│   ├── requirements.txt        # Dependencias de inferencia y ML (FastAPI, Scikit-Learn, etc.)
-│   └── api.py                  # Microservicio FastAPI ultrarrápido (Inferencia + SHAP + Drift)
-├── supabase/                   # Configuración y esquemas de base de datos
-│   ├── migrations/             # Migraciones SQL versionadas
-│   └── seed.sql                # Datos de prueba para el hackathon
-├── .github/
-│   └── workflows/
-│       └── ci.yml              # CI/CD: typecheck, lint y verificación de build
-├── tailwind.config.ts          # Tokens oficiales de color y diseño Bancoagrícola
-├── vercel.json                 # Configuración de despliegue en Vercel
-├── .env.example                # Plantilla documentada de variables de entorno
+├── lib/
+│   ├── agent/                  # System prompt, escalera, validador determinista y tools
+│   └── supabase.ts             # Cliente de Supabase con service role para Route Handlers
+├── ml/                         # Módulo de Machine Learning (Python FastAPI)
+│   ├── requirements.txt        # Dependencias de inferencia y explicabilidad (SHAP)
+│   └── api.py                  # Microservicio FastAPI (< 2 ms)
+├── supabase/
+│   ├── migrations/             # Migraciones SQL versionadas (4 tablas activas)
+│   └── seed.sql                # Dataset determinista (8 héroes + 300 sintéticos)
+├── scripts/
+│   ├── verificar-reglas.ts     # Suite de 23 verificaciones de reglas de negocio
+│   ├── bateria-ataque.ts       # Batería de 20 ataques contra el agente
+│   └── generate-seed.mjs       # Generador del dataset determinista
+├── docs/                       # Contexto de negocio, normativas y diseño
+├── tailwind.config.ts          # Tokens corporativos oficiales
 └── AGENTS.md                   # Este documento normativo
 ```
 
@@ -51,58 +61,51 @@ agricola-entropyhack/
 
 1. **Fuente Primaria de Componentes UI: shadcn/ui**:
    * Todo componente visual o de interfaz de usuario DEBE construirse a partir de **shadcn/ui** como fuente primaria oficial (`.agents/skills/shadcn/`).
-   * Para animaciones e interactividad fluida, utilizar **Motion** (`motion/react`, ver `.agents/skills/motion/`).
+   * Para animaciones fluidas, utilizar **Motion** (`motion/react`, ver `.agents/skills/motion/`).
    * Iconos: Utilizar exclusivamente `lucide-react`.
-   * Logos oficiales de Bancoagrícola: ubicados en `/public/bancoagricola_blackfont_logo.svg` (fondo claro) y `/public/bancoagricola_whitefont_logo.svg` (fondo oscuro).
+   * Logos oficiales de Bancoagrícola: `/public/bancoagricola_blackfont_logo.svg` (fondo claro) y `/public/bancoagricola_whitefont_logo.svg` (fondo oscuro).
 2. **NO Alucines Paquetes**: 
-   * Frontend: Usa únicamente paquetes declarados. No agregues Axios (usa `fetch` nativo).
+   * Frontend: Usa únicamente paquetes declarados en `package.json`. Usa `fetch` nativo (prohibido Axios).
    * ML: Usa únicamente las librerías de `ml/requirements.txt`.
 3. **Tipado Estricto de TypeScript**:
-   * Prohibido usar `any`. Define interfaces explícitas para todos los modelos de datos, requests y responses.
-   * Corre `npm run type-check` mentalmente o verifica que el código compile sin advertencias de tipos.
+   * Prohibido usar `any`. Define interfaces explícitas y esquemas de Zod para requests, responses y mutaciones de base de datos.
 4. **Respeto a la Identidad Visual de Bancoagrícola**:
-   * Utiliza las clases de Tailwind con prefijo `agricola-` (`bg-agricola-blue`, `bg-agricola-yellow`, `text-agricola-dark`, `bg-agricola-bg`).
-   * Nunca uses negro puro `#000000` para texto de lectura; usa `text-agricola-dark` (`#282828`).
-   * Mantén sombras sutiles (`shadow-subtle`) y bordes limpios con generoso espacio blanco.
-5. **Tono Empático Obligatorio**:
-   * Ningún texto en la interfaz debe sonar a cobro judicial o intimidación.
-   * Utiliza términos como *"Cuidemos tu récord crediticio"*, *"Opciones a tu medida"*, *"Alivio financiero"*, *"Propuesta preventiva"*.
+   * Utiliza las clases de Tailwind alineadas a los tokens oficiales:
+     * Amarillo Corporativo: `#FDDA24` — **Únicamente como fondo de relleno** (botones o badges) con texto oscuro encima. **NUNCA como color de texto sobre blanco** (por contraste WCAG).
+     * Texto Oscuro Grafito: `#2C2A29` (texto principal de lectura).
+     * Tonos de tranquilidad: Verde esmeralda y ámbar suave.
+     * **EL CLIENTE NUNCA VE ROJO.** El color rojo genera culpa, angustia y evasión; se reserva de forma estricta para consolas administrativas internas.
+5. **El Scorer ML es Interno — El LLM Dialoga — El Código Decide**:
+   * `/api/predict` aporta score numérico y los 3 factores SHAP para contextualizar. **Su salida nunca se le muestra cruda al cliente.**
+   * El LLM adapta el tono, la empatía y la conversación (voseo salvadoreño natural, 2 a 3 frases por turno).
+   * Las reglas duras (escalera de opciones, plazos máximos de 1 a 3 días o corte de quincena, condonación cero) están escritas en **código inmutable**, no en el prompt.
+   * **El validador determinista corre en cada turno** antes de emitir cualquier texto al usuario.
 6. **Seguridad y Secretos**:
-   * **NUNCA** incluyas claves privadas en código cliente o commits.
-   * `SUPABASE_SERVICE_ROLE_KEY` solo puede leerse en Route Handlers del servidor (`/app/api/...`), jamás en Client Components (`'use client'`).
+   * `SUPABASE_SERVICE_ROLE_KEY` solo puede leerse en Route Handlers del servidor (`app/api/...`), jamás en Client Components (`'use client'`) ni con prefijo `NEXT_PUBLIC_`.
 7. **Modo de Emergencia Offline (`lib/demo.ts`)**:
-   * Es estrictamente un **"botón rojo" de respaldo** por si el Wi-Fi del venue (FEPADE) colapsa durante el pitch del hackathon.
-   * **PROHIBIDO** desviar el desarrollo hacia mocks permanentes o asumir que la app corre offline por defecto. El desarrollo principal siempre debe comunicarse con los endpoints y Supabase.
+   * Es estrictamente un **"botón rojo" de respaldo** por si el Wi-Fi colapsa durante el pitch. El desarrollo principal siempre interactúa con la base de datos real y endpoints.
 
 ---
 
 ## 4. Estandarización de Git y Commits
 
 ### Formato de Commits (Conventional Commits)
-Todo commit realizado tanto por humanos como por agentes de IA DEBE seguir esta estructura:
-
 ```
 <tipo>(<alcance opcional>): <descripción concisa en imperativo>
 ```
 
 **Tipos válidos:**
-* `feat`: Nueva funcionalidad de usuario (ej. `feat(ui): add empathetic payment restructuring modal`)
-* `fix`: Corrección de un error (ej. `fix(api): handle timeout when calling ML inference`)
-* `ml`: Cambios en modelos, pipelines o datos (ej. `ml(model): train lightgbm on 300k synthetic records with SHAP`)
-* `db`: Esquemas, migraciones o seeds de Supabase (ej. `db(schema): add risk_assessments table with RLS`)
-* `ui`: Ajustes visuales, diseño o tokens de marca (ej. `ui(brand): align button styles with bancoagricola palette`)
-* `security`: Ajustes de permisos, enmascaramiento de PII o validaciones (ej. `security: mask customer account numbers in logs`)
-* `chore`: Mantenimiento de configuración, dependencias o CI (ej. `chore(ci): add type-check step to pull requests`)
-
-### Convención de Branches (Para cuando se creen ramas)
-* `feat/<nombre-funcionalidad>` (ej. `feat/financial-health-card`)
-* `ml/<nombre-modelo-o-tarea>` (ej. `ml/xgboost-pipeline`)
-* `db/<cambio-esquema>` (ej. `db/interventions-table`)
-* `fix/<descripcion-bug>` (ej. `fix/api-health-cors`)
+* `feat`: Nueva funcionalidad de usuario (ej. `feat(agent): support inbound customer inquiries`)
+* `fix`: Corrección de un error (ej. `fix(validator): prevent decimal numbers from counting as sentence breaks`)
+* `ml`: Cambios en modelos, SHAP o inferencia (ej. `ml(model): add tree explainer feature importance`)
+* `db`: Esquemas o migraciones de Supabase (ej. `db(schema): add constraint for voice modes`)
+* `ui`: Ajustes visuales, diseño o tokens (ej. `ui(chat): add streaming message indicator`)
+* `docs`: Cambios en documentación o contexto (ej. `docs(ncb022): document point-in-time classification`)
+* `chore`: Mantenimiento de configuración, dependencias o CI (ej. `chore(ci): update workflow checks`)
 
 ---
 
-## 5. Contrato de Inferencia de ML (Frontend ↔ Backend ↔ ML Service)
+## 5. Contrato de Inferencia de ML (`/api/predict`)
 
 ### Request a `/api/predict` (POST)
 ```json
@@ -122,16 +125,16 @@ Todo commit realizado tanto por humanos como por agentes de IA DEBE seguir esta 
 {
   "success": true,
   "data": {
-    "riskScore": 74, // 0 a 100
-    "riskLevel": "MODERATE_HIGH", // "LOW" | "MODERATE" | "MODERATE_HIGH" | "CRITICAL"
+    "riskScore": 74,
+    "riskBand": "MODERATE_HIGH",
     "defaultProbability": 0.74,
-    "preventiveActionRecommended": "PAYMENT_RESTRUCTURING",
+    "preventiveActionRecommended": "MOVER_A_QUINCENA",
     "topRiskFactors": [
-      { "factor": "Utilización de línea de crédito alta (>75%)", "impact": "+28%" },
-      { "factor": "Caída en saldo de ahorros en últimos 3 meses", "impact": "+22%" },
-      { "factor": "Ratio deuda/ingreso superior al umbral óptimo", "impact": "+15%" }
-    ],
-    "empatheticMessage": "Notamos que este mes tus gastos han aumentado. Queremos cuidar tu récord crediticio con opciones flexibles antes de tu fecha de pago."
+      { "factor": "Utilización de línea de crédito alta (>75%)", "shapValue": 0.28 },
+      { "factor": "Caída en saldo de ahorros en últimos 3 meses", "shapValue": 0.22 },
+      { "factor": "Descalce entre fecha de pago y quincena", "shapValue": 0.15 }
+    ]
   }
 }
 ```
+*(Nota: El backend y el agente conversacional toman estos factores para guiar la consulta de herramientas tipadas, sin exponer mensajes directos no validados).*

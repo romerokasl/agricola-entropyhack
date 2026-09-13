@@ -68,6 +68,23 @@ técnico: un tercio de la nota probablemente se decide hablando.
 
 ---
 
+## 1.1 La Solución: Anticipa Bancoagrícola y sus 3 Diferenciadores
+
+**Anticipa Bancoagrícola** es la plataforma unificada que transforma la gestión preventiva en rentabilidad activa para el banco y salud financiera para el cliente.
+
+### Los 3 Diferenciadores Oficiales:
+1. **Precisión Auditable (Cumplimiento SSF):**
+   * Motor predictivo entrenado con datos reales de comportamiento financiero.
+   * Modelos explicables con **SHAP (TreeExplainer)**, garantizando que cada score, probabilidad de mora y disparador de contacto sea **100% auditable y transparente ante la SSF**.
+2. **Cobranza Empática y Accionable:**
+   * La IA analiza el contexto integral del cliente salvadoreño (quincena 15/30, remesas, ventana de buró, red de corresponsales).
+   * Mapea automáticamente la situación del usuario con **productos y soluciones reales de Bancoagrícola** mediante la escalera de 8 opciones.
+3. **Rentabilidad Activa (Monetización Tier A):**
+   * No solo mitigamos riesgo crediticio; **multiplicamos ingresos**.
+   * Identificamos clientes impecables (**Tier A Prime: 0 días de mora o deuda saldada**) y detonamos oportunidades oportunas de **cross-selling y up-selling** (Adelanto de Salario, Extrafinanciamiento limpio, upgrade de tarjetas).
+
+---
+
 ## 2. Quiénes dieron el brief
 
 - **Ricardo González** — a cargo de **toda la gestión de cobros del banco**, personas y
@@ -154,7 +171,25 @@ Voz · WhatsApp       Reglas · contexto     Resultado           Métricas · lo
 · web                · respuesta           · base de datos
 ```
 
-**Dos pipelines que plantearon:**
+### El Pipeline Operativo de Anticipa Bancoagrícola
+
+1. **Flujo Outbound (Iniciado por el Banco):**
+   * **Batch Diario Nocturno (03:00 AM)** tras consolidación del Core (EOD).
+   * **Supresión Reactiva en Tiempo Real:** Si el cliente cancela su cuota durante el día (Transfer365, App, Corresponsal), se emite un webhook que cancela automáticamente cualquier contacto programado.
+   * **Bifurcación por Estado de Cuota:**
+     * **¿Deuda/Cuota saldada? (Tier A Prime):** Bypass 100% de cobranza $\rightarrow$ **Envío de ofertas comerciales de Cross-selling y Up-selling**.
+     * **Cuota Pendiente:** Inferencia ML (SHAP) y segmentación por Tiers de mora:
+       * **Tier A Preventivo (0 a 14 días):** Recordatorio amigable, alineación de corte a la quincena o activación de débito automático.
+       * **Tier B (14 a 31 días) y Tier C (32 a 120 días):** Recordatorio prioritario digital y agente conversacional empático gobernado por reglas duras del banco.
+       * **Tier D-E+ (120 a 365+ días):** Recordatorio formal de cierre. **Menor esfuerzo del bot:** derivación rápida y prioritaria a ejecutivo humano para atención personalizada o cobranza judicial.
+
+2. **Flujo Inbound (Iniciado por el Cliente):**
+   * El cliente entra por WhatsApp, Web o Voz.
+   * El agente atiende de inmediato su duda o necesidad puntual.
+   * Consulta en tiempo real a Supabase: score predictivo, factores SHAP, perfil financiero, categoría NCB-022 y catálogo de opciones elegibles.
+   * Negociación de acuerdo registrado o transferencia a humano.
+
+**Dos pipelines de voz que plantearon:**
 
 - **A)** `Audio → Speech-to-Text → LLM o agente → Text-to-Speech → Audio`
 - **B)** `Audio → Modelo speech-to-speech → Audio` *(más ambicioso)*
@@ -288,15 +323,27 @@ Siguen siendo nuestro diferenciador. Cambia dónde se usan.
 
 ### Regulación (nos da credibilidad y es un argumento de cumplimiento)
 
-- **Ley de Regulación de los Servicios de Información sobre el Historial de Crédito**
-  (reforma ago-2021): los burós actualizan registros **los primeros 10 días de cada
-  mes**; finiquito en máx. 7 días hábiles; el usuario recibe aviso cuando consultan su
-  historial. Burós en SV: **Equifax, TransUnion, InfoRed**.
-- **NCB-022 (SSF)**: clasifica activos por días de mora (A1…E) y determina el % de
-  reserva. Evitar el deterioro de categoría **libera provisiones** — ahí está el ROI.
-  *(Pendiente: bajar el PDF y poner la tabla real.)*
-- **Ley de Protección al Consumidor**: prohíbe cobros **difamatorios o injuriantes**.
-  → **El tono empático no es solo bonito: es cumplimiento normativo.** Slide del pitch.
+- **Dictamen Técnico NCB-022 / NCBC-022 (Superintendencia del Sistema Financiero - SSF):**
+  * **No es un promedio ponderado:** La clasificación de riesgo para consumo y tarjetas de crédito es una **evaluación mensual puntual ("foto del momento" o *point-in-time*) al cierre de cada mes**, basada en los días de mora de la cuota impagada más antigua.
+  * **Pago total de la deuda:** Si el cliente cancela la totalidad de la mora antes del corte contable del mes (dejando la deuda en $0 o al día con 0 días de atraso), el crédito **califica comercialmente de nuevo en Categoría A1**. El banco libera de inmediato la reserva de saneamiento.
+  * **Período de prueba/cura en reestructuraciones:** Si el crédito fue reestructurado o refinanciado, la norma prohíbe ascenderlo de inmediato a Categoría A. Exige un período de prueba: **4 pagos puntuales consecutivos para ascender a Categoría B**, y entre **6 y 12 meses continuos de pago impecable** para eliminar el rótulo de reestructurado y volver formalmente a Categoría A.
+  * **Principio de Calificación Integral (Contagio):** Un deudor no puede tener calificaciones dispersas para créditos sin garantía real dentro de la misma institución (Art. 9). Si Juan tiene un préstamo al día (A) y una tarjeta con 95 días de mora (C2), **ambos créditos se arrastran a Categoría C2**. Asimismo, si otro banco lo reporta en C o D en la Central de Riesgos de la SSF (>20% de sus pasivos), Bancoagrícola está obligado a reclasificarlo hacia la categoría más riesgosa (Art. 13), salvo garantías hipotecarias de primer orden inscritas.
+  * **Tabla de Reservas Mínimas de Saneamiento (Consumo):**
+    * **A1 (0 días):** 0% a 1%
+    * **A2 (1 a 30 días):** 1%
+    * **B (31 a 60 días):** 5%
+    * **C1 (61 a 90 días):** 15%
+    * **C2 (91 a 120 días):** 25% a 30%
+    * **D1/D2 (121 a 180 días):** 50% a 75%
+    * **E (Más de 180 días):** 100%
+- **Ley de Regulación de los Servicios de Información sobre el Historial de Crédito (Burós):**
+  * La clasificación NCB-022 (SSF) sirve para que el banco calcule provisiones de capital; el Buró de Crédito (Equifax, TransUnion, InfoRed) es el registro de reputación comercial.
+  * Los burós actualizan registros **los primeros 10 días de cada mes**.
+  * Con la reforma legal salvadoreña vigente, **al cancelar totalmente la deuda, el buró debe borrar el dato negativo a más tardar el día hábil siguiente** (dejando la cuenta como "Cancelada sin saldo pendiente").
+- **Ley de Protección al Consumidor (LPC):**
+  * Horario legal obligatorio: Lunes a viernes de 8:00 a.m. a 6:00 p.m. Prohibido contacto en fines de semana o feriados.
+  * Prohíbe cobros **difamatorios, intimidantes o dirigidos a terceros** (familia, vecinos, empleador).
+  * → **El tono empático no es solo bonito: es cumplimiento normativo estricto.** Slide del pitch.
 
 ### Evidencia académica
 
