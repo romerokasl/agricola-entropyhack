@@ -31,6 +31,7 @@ export type MotivoRechazo =
   | "monto_inventado"
   | "falta_presentacion"
   | "escalon_invalido"
+  | "truncada"
   | "vacia";
 
 export interface ResultadoValidacion {
@@ -50,8 +51,15 @@ function normalizar(texto: string): string {
   return texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
+/**
+ * Cuenta frases sin dejarse engañar por los decimales.
+ *
+ * Partir por `[.!?]` a secas hacía que "$145.00" contara como dos frases, y como el
+ * mensaje de cierre siempre menciona el monto acordado, el cierre se rechazaba casi
+ * siempre. Solo cuenta el signo si lo sigue un espacio o el final del texto.
+ */
 function contarFrases(texto: string): number {
-  return texto.split(/[.!?]+/).filter((f) => f.trim().length > 0).length;
+  return texto.split(/[.!?]+(?=\s|$)/).filter((f) => f.trim().length > 0).length;
 }
 
 /** Montos que el agente puede mencionar sin estar inventando. */
@@ -111,10 +119,11 @@ export function validar(respuesta: string, ctx: ContextoValidacion): ResultadoVa
     }
   }
 
-  if (contarFrases(texto) > MAX_FRASES) {
+  const frases = contarFrases(texto);
+  if (frases > MAX_FRASES) {
     return rechazar(
       "demasiadas_frases",
-      `Te pasaste de ${MAX_FRASES} frases. Esto es una conversación, no un comunicado: decilo en 2 o 3.`,
+      `Escribiste ${frases} frases y el máximo es ${MAX_FRASES}. Reescribí el MISMO mensaje en 3 frases o menos, sin perder el monto ni la fecha. Esto es una conversación, no un comunicado.`,
     );
   }
 

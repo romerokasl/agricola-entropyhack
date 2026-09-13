@@ -1,6 +1,6 @@
 import { agregarTurno } from "../db/conversaciones";
 import { obtenerLlmProvider, type MensajeLlm } from "./llm";
-import { construirContexto, SYSTEM_PROMPT, VERSION_PROMPT } from "./prompt";
+import { construirContexto, DISPARADOR_APERTURA, SYSTEM_PROMPT, VERSION_PROMPT } from "./prompt";
 import { DECLARACIONES, ejecutarTool } from "./tools";
 import type { Apertura, Cliente, Turno } from "./types";
 import { respuestaSegura, validar, type MotivoRechazo } from "./validator";
@@ -53,10 +53,18 @@ export async function ejecutarTurno(params: {
   const mensajes: MensajeLlm[] = aMensajes(historial);
   const esPrimerMensajeDelAgente = !historial.some((t) => t.rol === "agente");
 
+  // Cuando el agente abre, todavía no hay historial — y la API rechaza una
+  // conversación sin ningún turno. El disparador no se persiste: solo el mensaje que
+  // el agente produce a partir de él.
+  if (mensajes.length === 0) {
+    mensajes.push({ rol: "cliente", texto: DISPARADOR_APERTURA });
+  }
+
   let tokensIn: number | null = null;
   let tokensOut: number | null = null;
   let cerroConversacion = false;
   let texto = "";
+  let truncada = false;
 
   // --- Ciclo de herramientas -------------------------------------------------
   for (let iteracion = 0; iteracion < MAX_ITERACIONES_TOOLS; iteracion += 1) {
@@ -70,6 +78,7 @@ export async function ejecutarTurno(params: {
     tokensIn = respuesta.tokensIn;
     tokensOut = respuesta.tokensOut;
     texto = respuesta.texto;
+    truncada = respuesta.truncada;
 
     if (respuesta.llamadasTool.length === 0) break;
 
@@ -92,7 +101,14 @@ export async function ejecutarTurno(params: {
 
   // --- Validación: un reintento correctivo, después respuesta segura ---------
   const ctxValidacion = { cliente, historial, esPrimerMensajeDelAgente };
-  const validacion = validar(texto, ctxValidacion);
+  // Una respuesta cortada a media frase nunca se muestra, aunque el resto pase.
+  const validacion = truncada
+    ? {
+        ok: false,
+        motivo: "truncada" as const,
+        notaCorrectiva: "Tu respuesta quedó cortada a la mitad. Escribila completa en 2 o 3 frases.",
+      }
+    : validar(texto, ctxValidacion);
 
   // `validadorOk` registra si la respuesta pasó SIN intervención. Un reintento que
   // después salió bien igual cuenta como intervención: si no, la métrica "tasa de
@@ -132,6 +148,9 @@ export async function ejecutarTurno(params: {
 
   await agregarTurno({
     conversacionId,
+    // El historial que llega ya incluye el turno del cliente de este intercambio,
+    // así que el turno del agente va justo después.
+    indice: historial.length,
     rol: "agente",
     texto: resultado.texto,
     metricas: {

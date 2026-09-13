@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "../supabase";
 import type { BandaRiesgo, Cliente, TipoIngreso } from "../agent/types";
+import { conReintentos } from "./reintentos";
 
 interface FilaCliente {
   id: string;
@@ -50,24 +51,23 @@ function aCliente(fila: FilaCliente): Cliente {
   };
 }
 
-export async function obtenerClientePorSlug(slug: string): Promise<Cliente | null> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("clientes")
-    .select(COLUMNAS)
-    .eq("slug", slug)
-    .maybeSingle<FilaCliente>();
+function buscarPor(campo: "slug" | "id", valor: string): Promise<Cliente | null> {
+  return conReintentos(`No se pudo leer el cliente ${valor}`, async () => {
+    const { data, error } = await getSupabaseAdmin()
+      .from("clientes")
+      .select(COLUMNAS)
+      .eq(campo, valor)
+      .maybeSingle<FilaCliente>();
 
-  if (error) throw new Error(`No se pudo leer el cliente "${slug}": ${error.message}`);
-  return data ? aCliente(data) : null;
+    if (error) throw new Error(error.message);
+    return data ? aCliente(data) : null;
+  });
 }
 
-export async function obtenerClientePorId(id: string): Promise<Cliente | null> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("clientes")
-    .select(COLUMNAS)
-    .eq("id", id)
-    .maybeSingle<FilaCliente>();
+export function obtenerClientePorSlug(slug: string): Promise<Cliente | null> {
+  return buscarPor("slug", slug);
+}
 
-  if (error) throw new Error(`No se pudo leer el cliente ${id}: ${error.message}`);
-  return data ? aCliente(data) : null;
+export function obtenerClientePorId(id: string): Promise<Cliente | null> {
+  return buscarPor("id", id);
 }

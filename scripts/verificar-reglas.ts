@@ -177,6 +177,14 @@ const pruebas: Array<[string, () => void]> = [
     });
     assert.equal(r.motivo, "demasiadas_frases");
   }],
+  ["Los decimales de un monto NO cuentan como fin de frase", () => {
+    // Regresión: "$145.00" hacía que el conteo diera 4 y el cierre se rechazaba
+    // casi siempre, porque el mensaje de cierre siempre menciona el monto.
+    const r = validar("Listo, Karla. Te dejé la fecha para el 16. Vas a pagar $145.00 cada mes.", {
+      cliente: karla, historial: [], esPrimerMensajeDelAgente: false,
+    });
+    assert.equal(r.ok, true, r.motivo ?? "");
+  }],
   ["Se bloquea el exceso de exclamaciones", () => {
     const r = validar("Qué bueno! Excelente!", {
       cliente: karla, historial: [], esPrimerMensajeDelAgente: false,
