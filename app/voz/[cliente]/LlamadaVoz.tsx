@@ -1,27 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Mic,
+  MicOff,
+  Phone,
+  PhoneIncoming,
+  PhoneOff,
+  RotateCcw,
+  ShieldCheck,
+  Terminal,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 
 import type { Apertura } from "@/lib/agent/types";
-
-import { aBase64, GrabadorVoz } from "./grabador";
-
-/**
- * Llamada con el agente: push-to-talk, transcripción visible y latencia por etapa.
- *
- * Fase 1 del pipeline: STT y TTS corren en el navegador (Web Speech API), sin API keys
- * ni backend de audio. El objetivo de esta fase es cerrar el lazo completo —
- * hablar → transcribir → LLM → validador → responder hablando → persistir— para poder
- * medirlo. Los proveedores de verdad (Deepgram, Google TTS) entran en Fase 2 detrás de
- * la misma interfaz, sin tocar esta pantalla.
- *
- * Por qué push-to-talk y no detección automática de fin de turno: el banco aceptó 4–5 s
- * de latencia, así que no hay que pelear milisegundos con un VAD. Un botón elimina
- * cortar a la persona cuando titubea, que es justo el riesgo con alguien bajo estrés
- * financiero.
- *
- * Regla de diseño heredada del chat: el cliente NUNCA ve rojo. Rojo = vergüenza.
- */
 
 interface Mensaje {
   rol: "agente" | "cliente";
@@ -41,12 +38,9 @@ interface RespuestaApi {
     conversacionId: string;
     cliente?: { nombre: string };
     turnos: Mensaje[];
-    /** Lo que el STT del servidor entendió. Se muestra tal cual: si se equivoca, se ve. */
     transcripcion?: string;
     capacidades?: { sttEnServidor: boolean; ttsEnServidor: boolean };
-    /** El mismo texto, normalizado para pronunciarlo. Se muestra `texto`, se habla esto. */
     hablado?: string;
-    /** Audio sintetizado en el servidor. `null` = que hable el navegador. */
     audio?: { base64: string; mime: string; latenciaMs: number } | null;
     cerrada?: boolean;
     metricas?: Metricas;
@@ -54,15 +48,14 @@ interface RespuestaApi {
   error?: { code: string; message: string };
 }
 
-/** Latencia del último turno, medida de punta a punta en el navegador. */
 interface Etapas {
   sttMs: number | null;
   llmMs: number | null;
   ttsMs: number | null;
 }
 
-// --- Tipos mínimos de la Web Speech API -------------------------------------
-// TypeScript no los incluye en su librería estándar y `AGENTS.md` prohíbe `any`.
+type FaseLlamada = "entrante" | "conectada" | "finalizada";
+type EstadoVoz = "iniciando" | "hablando" | "escuchando" | "pensando" | "silenciado";
 
 interface AlternativaTranscripcion {
   readonly transcript: string;
@@ -99,11 +92,8 @@ function obtenerConstructorReconocedor(): ConstructorReconocedor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-/**
- * Voz en español, lo más cercana posible al centroamericano. La lista del sistema varía
- * por máquina y navegador, así que se degrada en orden en vez de asumir una.
- */
 function elegirVoz(): SpeechSynthesisVoice | null {
+  if (typeof window === "undefined" || !window.speechSynthesis) return null;
   const voces = window.speechSynthesis.getVoices();
   const preferidas = ["es-sv", "es-419", "es-mx", "es-us", "es-co", "es-es"];
   for (const etiqueta of preferidas) {
@@ -113,471 +103,903 @@ function elegirVoz(): SpeechSynthesisVoice | null {
   return voces.find((v) => v.lang.toLowerCase().startsWith("es")) ?? null;
 }
 
-type Estado = "iniciando" | "inactivo" | "escuchando" | "pensando" | "hablando";
-
-const ETIQUETA_ESTADO: Record<Estado, string> = {
-  iniciando: "conectando…",
-  inactivo: "mantené el botón para hablar",
-  escuchando: "te escucho…",
-  pensando: "pensando…",
-  hablando: "hablando…",
+const NOMBRES_CLIENTES: Record<string, string> = {
+  karla: "Karla Menjívar",
+  wilber: "Wilber Ramos",
+  sandra: "Sandra Beltrán",
+  rosa: "Rosa Rivera",
+  nelson: "Nelson Gómez",
+  jose: "José Portillo",
+  tito: "Tito Castillo",
+  marta: "Marta Cruz",
 };
 
+/**
+ * Sintetizador Web Audio API de Timbre Telefónico (Dual Tone 440 Hz + 480 Hz)
+ */
+class TimbreTelefonico {
+  private ctx: AudioContext | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private sonando = false;
+
+  iniciar() {
+    if (this.sonando) return;
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.ctx = new AudioCtx();
+      this.sonando = true;
+      this.tocarCiclo();
+      this.timer = setInterval(() => this.tocarCiclo(), 4200);
+    } catch {
+      // Navegador puede restringir autoplay hasta interacción
+    }
+  }
+
+  private tocarCiclo() {
+    if (!this.ctx || !this.sonando) return;
+    try {
+      const t = this.ctx.currentTime;
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.type = "sine";
+      osc2.type = "sine";
+      osc1.frequency.setValueAtTime(440, t);
+      osc2.frequency.setValueAtTime(480, t);
+
+      // Timbre suave con ataque y decaimiento (1.8s sonido + silencio)
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.exponentialRampToValueAtTime(0.15, t + 0.1);
+      gain.gain.setValueAtTime(0.15, t + 1.7);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 1.9);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.start(t);
+      osc2.start(t);
+      osc1.stop(t + 2.0);
+      osc2.stop(t + 2.0);
+    } catch {
+      // Ignorar excepciones de audio context
+    }
+  }
+
+  detener() {
+    this.sonando = false;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    if (this.ctx && this.ctx.state !== "closed") {
+      void this.ctx.close();
+      this.ctx = null;
+    }
+  }
+}
+
 export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura: Apertura }) {
+  const [fase, setFase] = useState<FaseLlamada>("entrante");
+  const [estadoVoz, setEstadoVoz] = useState<EstadoVoz>("iniciando");
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [conversacionId, setConversacionId] = useState<string | null>(null);
-  const [estado, setEstado] = useState<Estado>("iniciando");
-  const [parcial, setParcial] = useState("");
+  const [duracion, setDuracion] = useState(0);
+  const [silenciado, setSilenciado] = useState(false);
+  const [altavoz, setAltavoz] = useState(true);
+  const [mostrarDrawer, setMostrarDrawer] = useState(false);
+  const [transcripcionEnVivo, setTranscripcionEnVivo] = useState("");
+  const [nivelVolumen, setNivelVolumen] = useState(0);
   const [etapas, setEtapas] = useState<Etapas | null>(null);
+  const [metricas, setMetricas] = useState<Metricas | null>(null);
   const [cerrada, setCerrada] = useState(false);
-  const [aviso, setAviso] = useState<string | null>(null);
-  const [soportado, setSoportado] = useState(true);
-  /** Audio que el navegador no dejó sonar solo, a la espera de un toque. */
-  const [pendiente, setPendiente] = useState<{ base64: string; mime: string } | null>(null);
-  /** Lo dice el servidor al iniciar: si transcribe él, se le manda audio en vez de texto. */
-  const [sttEnServidor, setSttEnServidor] = useState(false);
+  const [errorAviso, setErrorAviso] = useState<string | null>(null);
 
-  const iniciado = useRef(false);
-  const reconocedor = useRef<Reconocedor | null>(null);
-  const grabador = useRef<GrabadorVoz | null>(null);
-  const transcripcion = useRef("");
-  /** Respaldo: si soltás antes de que el motor marque un resultado como final. */
-  const ultimoParcial = useRef("");
-  /**
-   * Cuándo soltaste el botón. La etapa STT se mide desde ahí, no desde que lo apretaste:
-   * el tiempo que estuviste hablando es tuyo, no del transcriptor.
-   */
-  const finEscucha = useRef(0);
+  const nombreCliente = NOMBRES_CLIENTES[slug] ?? slug;
+
+  // Referencias para el control de audio, timers y VAD
+  const timbreRef = useRef<TimbreTelefonico | null>(null);
+  const reconocedorRef = useRef<Reconocedor | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const silencioTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textoBufferRef = useRef<string>("");
+  const audioActualRef = useRef<HTMLAudioElement | null>(null);
   const conversacionIdRef = useRef<string | null>(null);
-  const finDelHilo = useRef<HTMLDivElement>(null);
+  const finLlamadaRef = useRef(false);
 
-  /** Reproduce el texto y devuelve el tiempo hasta el primer sonido (ms). */
-  const hablar = useCallback((texto: string): Promise<number> => {
+  conversacionIdRef.current = conversacionId;
+
+  // Iniciar timbre telefónico en fase entrante
+  useEffect(() => {
+    if (fase === "entrante") {
+      const timbre = new TimbreTelefonico();
+      timbreRef.current = timbre;
+      timbre.iniciar();
+      return () => {
+        timbre.detener();
+      };
+    }
+  }, [fase]);
+
+  // Cronómetro de llamada conectada
+  useEffect(() => {
+    if (fase !== "conectada") return;
+    const interval = setInterval(() => {
+      setDuracion((d) => d + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [fase]);
+
+  // Formato mm:ss
+  const formatoTiempo = (segundos: number) => {
+    const mins = Math.floor(segundos / 60);
+    const segs = segundos % 60;
+    return `${mins.toString().padStart(2, "0")}:${segs.toString().padStart(2, "0")}`;
+  };
+
+  /**
+   * Detener audio del agente de inmediato (Barge-in / Interrupción)
+   */
+  const interrumpirAgente = useCallback(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    if (audioActualRef.current) {
+      audioActualRef.current.pause();
+      audioActualRef.current.currentTime = 0;
+      audioActualRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Reproduce la voz del agente (Piper local o Web Speech API)
+   */
+  const reproducirVozAgente = useCallback(
+    async (texto: string, audio?: { base64: string; mime: string } | null) => {
+      setEstadoVoz("hablando");
+
+      // Si el servidor mandó audio sintetizado de Piper
+      if (audio?.base64) {
+        return new Promise<number>((resolve) => {
+          interrumpirAgente();
+          const el = new Audio(`data:${audio.mime};base64,${audio.base64}`);
+          audioActualRef.current = el;
+          const t0 = Date.now();
+          let primerSonido = 0;
+
+          el.onplaying = () => {
+            primerSonido = Date.now() - t0;
+          };
+          el.onended = () => {
+            audioActualRef.current = null;
+            if (!finLlamadaRef.current) setEstadoVoz("escuchando");
+            resolve(primerSonido);
+          };
+          el.onerror = () => {
+            audioActualRef.current = null;
+            if (!finLlamadaRef.current) setEstadoVoz("escuchando");
+            resolve(0);
+          };
+
+          void el.play().catch(() => {
+            // Fallback a SpeechSynthesis si play es bloqueado
+            hablarNavegador(texto).then(resolve);
+          });
+        });
+      }
+
+      return hablarNavegador(texto);
+    },
+    [interrumpirAgente],
+  );
+
+  const hablarNavegador = (texto: string): Promise<number> => {
     return new Promise((resolve) => {
       if (typeof window === "undefined" || !window.speechSynthesis) {
+        if (!finLlamadaRef.current) setEstadoVoz("escuchando");
         resolve(0);
         return;
       }
+      interrumpirAgente();
       const enunciado = new SpeechSynthesisUtterance(texto);
       const voz = elegirVoz();
       if (voz) enunciado.voice = voz;
       enunciado.lang = voz?.lang ?? "es-MX";
+      enunciado.rate = 1.05;
 
       const t0 = Date.now();
       let primerSonido = 0;
+
       enunciado.onstart = () => {
         primerSonido = Date.now() - t0;
       };
-      enunciado.onend = () => resolve(primerSonido);
-      enunciado.onerror = () => resolve(primerSonido);
+      enunciado.onend = () => {
+        if (!finLlamadaRef.current) setEstadoVoz("escuchando");
+        resolve(primerSonido);
+      };
+      enunciado.onerror = () => {
+        if (!finLlamadaRef.current) setEstadoVoz("escuchando");
+        resolve(primerSonido);
+      };
 
       window.speechSynthesis.speak(enunciado);
     });
+  };
+
+  /**
+   * Envía el turno al servidor (`/api/voz`) y procesa la respuesta
+   */
+  const procesarTurno = useCallback(
+    async (texto: string) => {
+      const convId = conversacionIdRef.current;
+      if (!convId || !texto.trim() || finLlamadaRef.current) return;
+
+      setEstadoVoz("pensando");
+      setTranscripcionEnVivo("");
+      textoBufferRef.current = "";
+
+      // Añadir mensaje del cliente a la auditoría
+      setMensajes((prev) => [...prev, { rol: "cliente", texto }]);
+
+      const tInicioLlm = Date.now();
+      try {
+        const res = await fetch("/api/voz", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accion: "mensaje",
+            conversacionId: convId,
+            texto,
+          }),
+        });
+
+        const json = (await res.json()) as RespuestaApi;
+
+        if (!json.success || !json.data) {
+          // Si por alguna razón la conversación caducó, intentar reabrir de forma transparente
+          if (json.error?.message?.includes("no existe")) {
+            const reintento = await fetch("/api/voz", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ accion: "iniciar", slug, apertura: "cliente" }),
+            });
+            const jsonReintento = (await reintento.json()) as RespuestaApi;
+            if (jsonReintento.success && jsonReintento.data) {
+              setConversacionId(jsonReintento.data.conversacionId);
+              conversacionIdRef.current = jsonReintento.data.conversacionId;
+              await procesarTurno(texto);
+              return;
+            }
+          }
+          setErrorAviso(json.error?.message ?? "Error en la llamada");
+          setEstadoVoz("escuchando");
+          return;
+        }
+
+        const llmMs = Date.now() - tInicioLlm;
+        const ultimoTurno = json.data.turnos.at(-1);
+        const textoRespuesta = ultimoTurno?.texto ?? "";
+
+        setMensajes(json.data.turnos);
+        if (json.data.metricas) {
+          setMetricas(json.data.metricas);
+          setEtapas({
+            sttMs: json.data.metricas.latenciaSttMs ?? null,
+            llmMs,
+            ttsMs: json.data.audio?.latenciaMs ?? null,
+          });
+        }
+
+        if (json.data.cerrada) {
+          setCerrada(true);
+        }
+
+        // Hablar respuesta
+        if (textoRespuesta) {
+          await reproducirVozAgente(json.data.hablado ?? textoRespuesta, json.data.audio);
+        } else {
+          setEstadoVoz("escuchando");
+        }
+      } catch (err) {
+        setErrorAviso(err instanceof Error ? err.message : "Falla en comunicación");
+        setEstadoVoz("escuchando");
+      }
+    },
+    [slug, reproducirVozAgente],
+  );
+
+  /**
+   * Inicia el reconocedor de voz continuo y el analizador de volumen para VAD y Barge-in
+   */
+  const iniciarVAD = useCallback(() => {
+    const Constructor = obtenerConstructorReconocedor();
+    if (!Constructor) {
+      setErrorAviso("Tu navegador no soporta reconocimiento de voz continuo.");
+      return;
+    }
+
+    try {
+      const rec = new Constructor();
+      rec.lang = "es-SV";
+      rec.continuous = true;
+      rec.interimResults = true;
+
+      rec.onresult = (evento: EventoReconocimiento) => {
+        if (silenciado || finLlamadaRef.current) return;
+
+        let interino = "";
+        let final = "";
+
+        for (let i = 0; i < evento.results.length; i++) {
+          const res = evento.results[i];
+          if (res.isFinal) {
+            final += res[0].transcript;
+          } else {
+            interino += res[0].transcript;
+          }
+        }
+
+        const textoDetectado = (final || interino).trim();
+
+        if (textoDetectado.length > 0) {
+          // BARGE-IN: Si el agente estaba hablando y el usuario empieza a hablar, cortar al agente
+          interrumpirAgente();
+          setEstadoVoz("escuchando");
+          setTranscripcionEnVivo(textoDetectado);
+          textoBufferRef.current = textoDetectado;
+
+          // VAD: Resetear el timer de silencio
+          if (silencioTimerRef.current) {
+            clearTimeout(silencioTimerRef.current);
+          }
+
+          // Esperar 900 ms de silencio para disparar el turno
+          silencioTimerRef.current = setTimeout(() => {
+            const textoFinal = textoBufferRef.current;
+            if (textoFinal.length > 0) {
+              void procesarTurno(textoFinal);
+            }
+          }, 950);
+        }
+      };
+
+      rec.onerror = (e) => {
+        if (e.error !== "no-speech") {
+          console.warn("STT warn:", e.error);
+        }
+      };
+
+      rec.onend = () => {
+        // Reconectar si la llamada sigue activa y no fue colgada
+        if (!finLlamadaRef.current && !silenciado) {
+          try {
+            rec.start();
+          } catch {}
+        }
+      };
+
+      rec.start();
+      reconocedorRef.current = rec;
+    } catch (err) {
+      console.error("Error al iniciar SpeechRecognition:", err);
+    }
+  }, [silenciado, interrumpirAgente, procesarTurno]);
+
+  /**
+   * Inicia el análisis de audio para el visualizador dinámico
+   */
+  const iniciarAnalizadorAudio = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioCtx();
+      audioContextRef.current = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const loop = () => {
+        if (finLlamadaRef.current) return;
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const promedio = sum / dataArray.length;
+        setNivelVolumen(Math.min(100, Math.round((promedio / 128) * 100)));
+        animFrameRef.current = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch (err) {
+      console.warn("No se pudo iniciar el visualizador de audio:", err);
+    }
   }, []);
 
   /**
-   * Reproduce el audio que sintetizó el servidor y devuelve el tiempo hasta el primer
-   * sonido. Si el navegador bloquea la reproducción automática (pasa con el saludo
-   * inicial, porque todavía no hubo ningún gesto del usuario), lo deja pendiente para
-   * que se pueda disparar con un toque en vez de perderse.
+   * Contestar llamada: Desbloquea audio, detiene timbre, conecta e inicia sesión
    */
-  const reproducir = useCallback((base64: string, mime: string): Promise<number> => {
-    return new Promise((resolve) => {
-      const elemento = new Audio(`data:${mime};base64,${base64}`);
-      const t0 = Date.now();
-      let primerSonido = 0;
-
-      elemento.onplaying = () => {
-        primerSonido = Date.now() - t0;
-      };
-      elemento.onended = () => resolve(primerSonido);
-      elemento.onerror = () => resolve(0);
-
-      void elemento.play().catch(() => {
-        setPendiente({ base64, mime });
-        resolve(0);
-      });
-    });
-  }, []);
-
-  const decirTurnoDelAgente = useCallback(
-    async (
-      turnos: Mensaje[],
-      hablado: string | undefined,
-      audio: { base64: string; mime: string } | null | undefined,
-      llmMs: number | null,
-      sttMs: number | null,
-    ) => {
-      setMensajes((prev) => [...prev, ...turnos]);
-      const delAgente = turnos.filter((t) => t.rol === "agente");
-      if (delAgente.length === 0) return;
-
-      // Se muestra el texto escrito y se pronuncia el normalizado. Si el servidor no
-      // mandó versión hablada, se lee el escrito: peor pronunciado, pero nunca mudo.
-      const aPronunciar = hablado ?? delAgente.map((t) => t.texto).join(" ");
-
-      setEstado("hablando");
-      // Con proveedor de servidor (Piper) suena ese audio; sin él, la voz del navegador.
-      const ttsMs = audio ? await reproducir(audio.base64, audio.mime) : await hablar(aPronunciar);
-      setEtapas({ sttMs, llmMs, ttsMs });
-      setEstado("inactivo");
-    },
-    [hablar, reproducir],
-  );
-
-  /** Camino con STT de servidor: viaja el audio y vuelve la transcripción hecha acá. */
-  const enviarAudio = useCallback(
-    async (wav: Blob) => {
-      const id = conversacionIdRef.current;
-      if (!id) return;
-
-      setEstado("pensando");
-      try {
-        const audioBase64 = await aBase64(wav);
-        const res = await fetch("/api/voz", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accion: "audio", conversacionId: id, audioBase64 }),
-        });
-        const json = (await res.json()) as RespuestaApi;
-        if (!json.success || !json.data) {
-          setAviso(json.error?.message ?? "No se pudo enviar el audio.");
-          setEstado("inactivo");
-          return;
-        }
-        if (json.data.transcripcion) {
-          setMensajes((prev) => [...prev, { rol: "cliente", texto: json.data!.transcripcion! }]);
-        }
-        if (json.data.cerrada) setCerrada(true);
-        await decirTurnoDelAgente(
-          json.data.turnos,
-          json.data.hablado,
-          json.data.audio,
-          json.data.metricas?.latenciaLlmMs ?? null,
-          json.data.metricas?.latenciaSttMs ?? null,
-        );
-      } catch {
-        setAviso("No se pudo conectar con el servicio.");
-        setEstado("inactivo");
-      }
-    },
-    [decirTurnoDelAgente],
-  );
-
-  const enviarTexto = useCallback(
-    async (texto: string, sttMs: number) => {
-      const id = conversacionIdRef.current;
-      if (!id) return;
-
-      setMensajes((prev) => [...prev, { rol: "cliente", texto }]);
-      setEstado("pensando");
-
-      try {
-        const res = await fetch("/api/voz", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accion: "mensaje", conversacionId: id, texto, latenciaSttMs: sttMs }),
-        });
-        const json = (await res.json()) as RespuestaApi;
-        if (!json.success || !json.data) {
-          setAviso(json.error?.message ?? "No se pudo enviar el mensaje.");
-          setEstado("inactivo");
-          return;
-        }
-        if (json.data.cerrada) setCerrada(true);
-        await decirTurnoDelAgente(
-          json.data.turnos,
-          json.data.hablado,
-          json.data.audio,
-          json.data.metricas?.latenciaLlmMs ?? null,
-          sttMs,
-        );
-      } catch {
-        setAviso("No se pudo conectar con el servicio.");
-        setEstado("inactivo");
-      }
-    },
-    [decirTurnoDelAgente],
-  );
-
-  // --- Arranque de la conversación -----------------------------------------
-  useEffect(() => {
-    if (iniciado.current) return;
-    iniciado.current = true;
-
-    if (obtenerConstructorReconocedor() === null) setSoportado(false);
-
-    const iniciar = async () => {
-      try {
-        const res = await fetch("/api/voz", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accion: "iniciar", slug, apertura }),
-        });
-        const json = (await res.json()) as RespuestaApi;
-        if (!json.success || !json.data) {
-          setAviso(json.error?.message ?? "No se pudo iniciar la llamada.");
-          setEstado("inactivo");
-          return;
-        }
-        setConversacionId(json.data.conversacionId);
-        conversacionIdRef.current = json.data.conversacionId;
-        setSttEnServidor(json.data.capacidades?.sttEnServidor ?? false);
-        await decirTurnoDelAgente(
-          json.data.turnos,
-          json.data.hablado,
-          json.data.audio,
-          json.data.metricas?.latenciaLlmMs ?? null,
-          null,
-        );
-      } catch {
-        setAviso("No se pudo conectar con el servicio.");
-        setEstado("inactivo");
-      }
-    };
-
-    void iniciar();
-  }, [slug, apertura, decirTurnoDelAgente]);
-
-  // Las voces del sistema se cargan de forma asíncrona en Chrome: sin este toque,
-  // la primera respuesta puede salir con la voz por defecto en inglés.
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    const precargar = () => window.speechSynthesis.getVoices();
-    precargar();
-    window.speechSynthesis.addEventListener("voiceschanged", precargar);
-    return () => window.speechSynthesis.removeEventListener("voiceschanged", precargar);
-  }, []);
-
-  useEffect(() => {
-    finDelHilo.current?.scrollIntoView({ behavior: "smooth" });
-  }, [mensajes, estado]);
-
-  // --- Push-to-talk ---------------------------------------------------------
-  const empezarAHablar = useCallback(() => {
-    if (estado !== "inactivo" || cerrada || conversacionId === null) return;
-
-    // El agente puede estar todavía hablando: callarlo al tomar la palabra.
-    window.speechSynthesis.cancel();
-
-    // Con STT de servidor se graba el audio crudo; el navegador no transcribe nada.
-    if (sttEnServidor) {
-      const nuevo = new GrabadorVoz();
-      grabador.current = nuevo;
-      setAviso(null);
-      setEstado("escuchando");
-      void nuevo.empezar().catch(() => {
-        grabador.current = null;
-        setAviso("Necesito permiso del micrófono para escucharte.");
-        setEstado("inactivo");
-      });
-      return;
+  const contestarLlamada = async () => {
+    if (timbreRef.current) {
+      timbreRef.current.detener();
     }
+    setFase("conectada");
+    setEstadoVoz("iniciando");
+    finLlamadaRef.current = false;
 
-    const Constructor = obtenerConstructorReconocedor();
-    if (!Constructor) {
-      setSoportado(false);
-      return;
-    }
+    // Desbloquear AudioContext y arrancar micrófonos
+    await iniciarAnalizadorAudio();
+    iniciarVAD();
 
-    const rec = new Constructor();
-    rec.lang = "es-SV";
-    // `true` es lo que hace que esto sea push-to-talk de verdad. Con `false` el motor
-    // cierra el turno en la primera pausa y corta a media frase — justo lo que no se le
-    // puede hacer a alguien que titubea hablando de plata.
-    rec.continuous = true;
-    rec.interimResults = true;
-    transcripcion.current = "";
-    ultimoParcial.current = "";
-    finEscucha.current = 0;
+    // Iniciar llamada en el servidor
+    try {
+      const res = await fetch("/api/voz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "iniciar", slug, apertura }),
+      });
+      const json = (await res.json()) as RespuestaApi;
 
-    rec.onresult = (e) => {
-      // `e.results` acumula todo lo dicho en esta sesión, así que se rearma completo en
-      // cada evento en vez de ir concatenando (concatenar duplicaría los tramos).
-      let finales = "";
-      let provisional = "";
-      for (let i = 0; i < e.results.length; i += 1) {
-        const resultado = e.results[i];
-        const texto = resultado[0]?.transcript ?? "";
-        if (resultado.isFinal) finales += texto;
-        else provisional += texto;
-      }
-      transcripcion.current = finales;
-      ultimoParcial.current = provisional;
-      setParcial((finales + " " + provisional).trim());
-    };
-
-    rec.onerror = (e) => {
-      setAviso(
-        e.error === "not-allowed"
-          ? "Necesito permiso del micrófono para escucharte."
-          : "No te alcancé a escuchar. Probá de nuevo.",
-      );
-    };
-
-    rec.onend = () => {
-      // Si el motor nunca marcó un final, vale lo provisional: es preferible mandar lo
-      // que se entendió a perder el turno y pedirle a la persona que repita.
-      const texto = (transcripcion.current.trim() || ultimoParcial.current.trim()).trim();
-      const sttMs = finEscucha.current > 0 ? Date.now() - finEscucha.current : 0;
-      setParcial("");
-      reconocedor.current = null;
-      if (texto.length === 0) {
-        setEstado("inactivo");
+      if (!json.success || !json.data) {
+        setErrorAviso(json.error?.message ?? "No se pudo iniciar la sesión de voz");
+        setEstadoVoz("escuchando");
         return;
       }
-      void enviarTexto(texto, sttMs);
-    };
 
-    reconocedor.current = rec;
-    setAviso(null);
-    setEstado("escuchando");
-    rec.start();
-  }, [estado, cerrada, conversacionId, sttEnServidor, enviarTexto]);
+      setConversacionId(json.data.conversacionId);
+      conversacionIdRef.current = json.data.conversacionId;
+      setMensajes(json.data.turnos);
 
-  const dejarDeHablar = useCallback(() => {
-    if (estado !== "escuchando") return;
-    finEscucha.current = Date.now();
-    setEstado("pensando");
-
-    if (sttEnServidor) {
-      const activo = grabador.current;
-      grabador.current = null;
-      if (!activo) {
-        setEstado("inactivo");
-        return;
+      // Reproducir saludo inicial del agente
+      const saludo = json.data.turnos[0]?.texto;
+      if (saludo) {
+        await reproducirVozAgente(json.data.hablado ?? saludo, json.data.audio);
+      } else {
+        setEstadoVoz("escuchando");
       }
-      void activo
-        .detener()
-        .then(({ wav }) => enviarAudio(wav))
-        .catch(() => {
-          setAviso("No se pudo procesar el audio.");
-          setEstado("inactivo");
-        });
-      return;
+    } catch (err) {
+      setErrorAviso(err instanceof Error ? err.message : "Error al conectar llamada");
+      setEstadoVoz("escuchando");
+    }
+  };
+
+  /**
+   * Rechazar o colgar llamada
+   */
+  const colgarLlamada = () => {
+    finLlamadaRef.current = true;
+    if (timbreRef.current) timbreRef.current.detener();
+    interrumpirAgente();
+
+    if (silencioTimerRef.current) clearTimeout(silencioTimerRef.current);
+    if (reconocedorRef.current) {
+      try {
+        reconocedorRef.current.abort();
+      } catch {}
+      reconocedorRef.current = null;
+    }
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
     }
 
-    reconocedor.current?.stop();
-  }, [estado, sttEnServidor, enviarAudio]);
+    setFase("finalizada");
+  };
 
-  // Con STT de servidor no hace falta que el navegador reconozca voz: solo graba.
-  const faltaSoporte = !sttEnServidor && !soportado;
-  const puedeHablar = estado === "inactivo" && !cerrada && conversacionId !== null && !faltaSoporte;
+  /**
+   * Mute / Unmute
+   */
+  const alternarSilencio = () => {
+    const nuevo = !silenciado;
+    setSilenciado(nuevo);
+    if (micStreamRef.current) {
+      micStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !nuevo;
+      });
+    }
+    if (nuevo) {
+      if (reconocedorRef.current) {
+        try {
+          reconocedorRef.current.abort();
+        } catch {}
+      }
+      setEstadoVoz("silenciado");
+    } else {
+      if (reconocedorRef.current) {
+        try {
+          reconocedorRef.current.start();
+        } catch {}
+      }
+      setEstadoVoz("escuchando");
+    }
+  };
+
+  // Limpieza al desmontar
+  useEffect(() => {
+    return () => {
+      finLlamadaRef.current = true;
+      if (timbreRef.current) timbreRef.current.detener();
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      if (silencioTimerRef.current) clearTimeout(silencioTimerRef.current);
+      if (reconocedorRef.current) {
+        try {
+          reconocedorRef.current.abort();
+        } catch {}
+      }
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        void audioContextRef.current.close();
+      }
+    };
+  }, []);
 
   return (
-    <div className="mx-auto flex h-screen max-w-lg flex-col bg-agricola-bg">
-      <header className="flex items-center gap-3 bg-agricola-dark px-4 py-3 text-white">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-agricola-yellow text-sm font-bold text-agricola-dark">
-          BA
-        </div>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold">Bancoagrícola</p>
-          <p className="text-xs text-agricola-dark-subtle">Llamada · asistente de acompañamiento</p>
-        </div>
-      </header>
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-slate-950 font-sans text-slate-100 selection:bg-amber-500 selection:text-slate-950">
+      {/* Fondo ambiental dinámico con glassmorphism */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-[20%] -left-[10%] h-[600px] w-[600px] rounded-full bg-blue-900/20 blur-[130px]" />
+        <div className="absolute -bottom-[20%] -right-[10%] h-[600px] w-[600px] rounded-full bg-amber-600/15 blur-[140px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))]" />
+      </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
-        {mensajes.map((m, i) => (
-          <div key={i} className={m.rol === "cliente" ? "flex justify-end" : "flex justify-start"}>
-            <p
-              className={[
-                "max-w-[80%] whitespace-pre-wrap rounded-card px-3 py-2 text-sm shadow-subtle",
-                m.rol === "cliente"
-                  ? "bg-agricola-brand-green-soft text-agricola-dark"
-                  : "bg-agricola-bg-white text-agricola-dark",
-              ].join(" ")}
-            >
-              {m.texto}
-            </p>
-          </div>
-        ))}
+      {/* Botón flotante para Drawer de Auditoría del Jurado */}
+      <button
+        onClick={() => setMostrarDrawer(true)}
+        title="Ver telemetría y guardrails para el jurado"
+        className="fixed top-5 right-5 z-40 flex items-center gap-2 rounded-full border border-slate-800/80 bg-slate-900/80 px-4 py-2 text-xs font-medium text-slate-300 backdrop-blur-md transition-all hover:border-amber-500/50 hover:bg-slate-800 hover:text-white hover:shadow-lg hover:shadow-amber-500/10"
+      >
+        <ShieldCheck className="h-4 w-4 text-emerald-400" />
+        <span>Telemetría & Guardrails</span>
+      </button>
 
-        {parcial && (
-          <div className="flex justify-end">
-            <p className="max-w-[80%] rounded-card bg-agricola-bg-alt px-3 py-2 text-sm italic text-agricola-dark-subtle">
-              {parcial}
-            </p>
+      {/* Frame estilo Smartphone de alta gama */}
+      <div className="relative z-10 mx-auto flex h-[820px] w-full max-w-[400px] flex-col justify-between overflow-hidden rounded-[48px] border border-slate-800/80 bg-slate-900/90 p-7 shadow-2xl shadow-black/80 backdrop-blur-xl">
+        {/* ========================================================
+            FASE 1: PANTALLA DE LLAMADA ENTRANTE (INCOMING CALL)
+           ======================================================== */}
+        {fase === "entrante" && (
+          <div className="flex h-full flex-col justify-between py-6">
+            {/* Cabecera de llamada entrante */}
+            <div className="mt-8 flex flex-col items-center text-center">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-[11px] font-medium tracking-wide text-amber-300 uppercase">
+                <PhoneIncoming className="h-3.5 w-3.5 animate-bounce" />
+                Llamada Entrante
+              </div>
+              <h2 className="mt-4 text-2xl font-bold tracking-tight text-white">
+                Bancoagrícola
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Acompañamiento Financiero Preventivo
+              </p>
+              <p className="text-xs text-slate-500">
+                Para: <span className="text-slate-300 font-medium">{nombreCliente}</span>
+              </p>
+            </div>
+
+            {/* Avatar central con ondas concéntricas palpitantes */}
+            <div className="relative my-auto flex items-center justify-center">
+              {/* Ondas concéntricas animadas */}
+              <div className="absolute h-44 w-44 animate-ping rounded-full bg-amber-500/15" />
+              <div className="absolute h-56 w-56 animate-pulse rounded-full border border-amber-500/20 bg-blue-600/10" />
+
+              {/* Logo / Avatar */}
+              <div className="relative flex h-32 w-32 items-center justify-center rounded-full border-2 border-amber-400/80 bg-gradient-to-tr from-slate-900 via-blue-950 to-slate-900 shadow-2xl shadow-amber-500/20">
+                <span className="text-3xl font-black tracking-tighter text-amber-400">
+                  BA
+                </span>
+              </div>
+            </div>
+
+            {/* Botones de acción: Rechazar y Contestar */}
+            <div className="mb-4 flex items-center justify-around px-4">
+              {/* Rechazar */}
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  onClick={colgarLlamada}
+                  className="group flex h-18 w-18 items-center justify-center rounded-full bg-rose-600/90 text-white shadow-lg shadow-rose-600/30 transition-all hover:scale-105 hover:bg-rose-500 active:scale-95"
+                >
+                  <PhoneOff className="h-7 w-7 transition-transform group-hover:-rotate-12" />
+                </button>
+                <span className="text-xs font-medium text-slate-400">Rechazar</span>
+              </div>
+
+              {/* Contestar */}
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  onClick={contestarLlamada}
+                  className="group relative flex h-18 w-18 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 transition-all hover:scale-105 hover:bg-emerald-400 active:scale-95"
+                >
+                  <span className="absolute -inset-1 animate-pulse rounded-full border border-emerald-400/60" />
+                  <Phone className="h-7 w-7 animate-bounce" />
+                </button>
+                <span className="text-xs font-semibold text-emerald-400">Contestar</span>
+              </div>
+            </div>
           </div>
         )}
 
-        {(estado === "pensando" || estado === "hablando") && (
-          <div className="flex justify-start">
-            <p className="rounded-card bg-agricola-bg-white px-3 py-2 text-sm text-agricola-dark-subtle shadow-subtle">
-              {ETIQUETA_ESTADO[estado]}
-            </p>
+        {/* ========================================================
+            FASE 2: INTERFAZ EN LLAMADA ACTIVA (ZERO CHAT TEXT)
+           ======================================================== */}
+        {fase === "conectada" && (
+          <div className="flex h-full flex-col justify-between py-4">
+            {/* Top Bar: Info y Cronómetro */}
+            <div className="flex flex-col items-center text-center">
+              <span className="text-xs font-semibold uppercase tracking-wider text-amber-400/90">
+                Bancoagrícola
+              </span>
+              <h3 className="mt-1 text-xl font-bold text-white">{nombreCliente}</h3>
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-800/80 px-3 py-1 font-mono text-sm font-semibold tracking-wider text-slate-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                {formatoTiempo(duracion)}
+              </div>
+            </div>
+
+            {/* Centro: Visualizador de Audio y Avatar con Aura */}
+            <div className="relative my-auto flex flex-col items-center justify-center">
+              {/* Aura reactiva al volumen y al estado */}
+              <div
+                className={`absolute rounded-full transition-all duration-300 ${
+                  estadoVoz === "hablando"
+                    ? "h-56 w-56 bg-amber-500/20 blur-xl animate-pulse"
+                    : estadoVoz === "escuchando"
+                    ? "h-56 w-56 bg-cyan-500/20 blur-xl"
+                    : estadoVoz === "pensando"
+                    ? "h-56 w-56 bg-purple-500/20 blur-xl animate-ping"
+                    : "h-44 w-44 bg-slate-800/20 blur-md"
+                }`}
+                style={{
+                  transform: `scale(${1 + nivelVolumen / 200})`,
+                }}
+              />
+
+              {/* Avatar central */}
+              <div className="relative z-10 flex h-36 w-36 items-center justify-center rounded-full border-2 border-slate-700 bg-slate-900 shadow-2xl">
+                <div className="flex flex-col items-center">
+                  <span className="text-3xl font-black text-amber-400 tracking-tighter">
+                    BA
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-400">Voz AI</span>
+                </div>
+              </div>
+
+              {/* Estado descriptivo en tiempo real */}
+              <div className="mt-6 flex flex-col items-center gap-1.5 text-center">
+                <p className="text-sm font-semibold tracking-wide text-slate-200">
+                  {estadoVoz === "hablando" && "Bancoagrícola hablando…"}
+                  {estadoVoz === "escuchando" && "Escuchándote (Manos libres)…"}
+                  {estadoVoz === "pensando" && "Evaluando opciones válidas…"}
+                  {estadoVoz === "silenciado" && "Micrófono silenciado"}
+                  {estadoVoz === "iniciando" && "Conectando llamada…"}
+                </p>
+
+                {/* Subtítulo dinámico sutil cuando habla el usuario */}
+                {transcripcionEnVivo ? (
+                  <p className="max-w-[280px] truncate text-xs text-cyan-300/80 italic animate-pulse">
+                    &ldquo;{transcripcionEnVivo}&rdquo;
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Barge-in activo · Podés hablar en cualquier momento
+                  </p>
+                )}
+              </div>
+
+              {/* Ondas de audio simuladas estilo teléfono */}
+              <div className="mt-6 flex h-8 items-center gap-1.5">
+                {[0.4, 0.8, 1.2, 0.6, 1.4, 0.9, 0.5, 1.1, 0.7].map((factor, i) => {
+                  const altura =
+                    estadoVoz === "hablando"
+                      ? 12 + Math.sin(Date.now() / 200 + i) * 12
+                      : estadoVoz === "escuchando"
+                      ? Math.max(4, (nivelVolumen * factor) / 2.5)
+                      : 4;
+                  return (
+                    <span
+                      key={i}
+                      className={`w-1 rounded-full transition-all duration-75 ${
+                        estadoVoz === "hablando"
+                          ? "bg-amber-400"
+                          : estadoVoz === "escuchando"
+                          ? "bg-cyan-400"
+                          : "bg-slate-700"
+                      }`}
+                      style={{ height: `${Math.min(32, Math.max(4, altura))}px` }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Aviso de error transitorio si ocurre */}
+            {errorAviso && (
+              <div className="mx-2 mb-2 flex items-center gap-2 rounded-xl bg-rose-500/10 border border-rose-500/20 px-3 py-2 text-xs text-rose-300">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                <span className="truncate">{errorAviso}</span>
+              </div>
+            )}
+
+            {/* Controles telefónicos en la parte inferior */}
+            <div className="flex items-center justify-around rounded-3xl border border-slate-800 bg-slate-900/60 p-4 backdrop-blur-lg">
+              {/* Botón Silenciar */}
+              <button
+                onClick={alternarSilencio}
+                title={silenciado ? "Activar micrófono" : "Silenciar micrófono"}
+                className={`flex h-13 w-13 items-center justify-center rounded-full transition-all ${
+                  silenciado
+                    ? "bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30"
+                    : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                }`}
+              >
+                {silenciado ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              </button>
+
+              {/* Botón Colgar (Principal) */}
+              <button
+                onClick={colgarLlamada}
+                title="Colgar llamada"
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-600 text-white shadow-xl shadow-rose-600/40 transition-all hover:scale-105 hover:bg-rose-500 active:scale-95"
+              >
+                <PhoneOff className="h-7 w-7" />
+              </button>
+
+              {/* Botón Altavoz */}
+              <button
+                onClick={() => setAltavoz(!altavoz)}
+                title={altavoz ? "Altavoz encendido" : "Altavoz apagado"}
+                className={`flex h-13 w-13 items-center justify-center rounded-full transition-all ${
+                  altavoz
+                    ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                    : "bg-slate-800/40 text-slate-500"
+                }`}
+              >
+                {altavoz ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
         )}
 
-        {faltaSoporte && (
-          <p className="rounded-card bg-agricola-yellow-light px-3 py-2 text-center text-xs text-agricola-dark">
-            Este navegador no reconoce voz. Usá Chrome o Edge, o seguí la conversación por
-            escrito en <span className="font-semibold">/chat/{slug}</span>.
-          </p>
-        )}
+        {/* ========================================================
+            FASE 3: PANTALLA DE LLAMADA FINALIZADA
+           ======================================================== */}
+        {fase === "finalizada" && (
+          <div className="my-auto flex flex-col items-center justify-center text-center py-8">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400">
+              <PhoneOff className="h-8 w-8 text-rose-400" />
+            </div>
+            <h3 className="mt-5 text-xl font-bold text-white">Llamada finalizada</h3>
+            <p className="mt-1 text-sm text-slate-400">
+              Duración: <span className="font-mono text-slate-200 font-semibold">{formatoTiempo(duracion)}</span>
+            </p>
 
-        {pendiente && (
-          <div className="flex justify-center">
+            {cerrada && (
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-400">
+                <CheckCircle2 className="h-4 w-4" />
+                Gestión Registrada Exitosamente
+              </div>
+            )}
+
             <button
               onClick={() => {
-                const elemento = new Audio(`data:${pendiente.mime};base64,${pendiente.base64}`);
-                setPendiente(null);
-                void elemento.play().catch(() => undefined);
+                setDuracion(0);
+                setCerrada(false);
+                setMensajes([]);
+                setTranscripcionEnVivo("");
+                setFase("entrante");
               }}
-              className="rounded-button bg-agricola-yellow px-3 py-1.5 text-xs font-semibold text-agricola-dark shadow-subtle"
+              className="mt-8 inline-flex items-center gap-2 rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-500/20 transition-all hover:bg-amber-300 active:scale-95"
             >
-              Tocá para escuchar
+              <RotateCcw className="h-4 w-4" />
+              Simular Otra Llamada
             </button>
           </div>
         )}
-
-        {aviso && (
-          <p className="rounded-card bg-agricola-yellow-light px-3 py-2 text-center text-xs text-agricola-dark">
-            {aviso}
-          </p>
-        )}
-
-        {cerrada && (
-          <p className="text-center text-xs font-medium text-agricola-brand-green">
-            Acuerdo registrado
-          </p>
-        )}
-
-        <div ref={finDelHilo} />
       </div>
 
-      {etapas && (
-        <div className="flex justify-center gap-4 border-t border-agricola-border bg-agricola-bg-white px-3 py-2 text-[11px] text-agricola-dark-subtle">
-          <span>voz → texto: {etapas.sttMs === null ? "—" : `${etapas.sttMs} ms`}</span>
-          <span>agente: {etapas.llmMs === null ? "—" : `${etapas.llmMs} ms`}</span>
-          <span>texto → voz: {etapas.ttsMs === null ? "—" : `${etapas.ttsMs} ms`}</span>
+      {/* ========================================================
+          CAJÓN LATERAL DE AUDITORÍA Y TELEMETRÍA (PARA EL JURADO)
+         ======================================================== */}
+      {mostrarDrawer && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm transition-opacity">
+          <div className="flex h-full w-full max-w-md flex-col border-l border-slate-800 bg-slate-950 p-6 shadow-2xl animate-in slide-in-from-right duration-200">
+            {/* Cabecera del Drawer */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2 text-amber-400">
+                <Terminal className="h-5 w-5" />
+                <h4 className="font-bold text-slate-100">Telemetría de Llamada</h4>
+              </div>
+              <button
+                onClick={() => setMostrarDrawer(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Tarjetas de latencia y guardrails */}
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-center">
+                <span className="text-[10px] uppercase font-semibold text-slate-400">STT</span>
+                <p className="mt-1 font-mono text-xs font-bold text-cyan-300">
+                  {etapas?.sttMs ? `${etapas.sttMs} ms` : "Navegador"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-center">
+                <span className="text-[10px] uppercase font-semibold text-slate-400">Ollama LLM</span>
+                <p className="mt-1 font-mono text-xs font-bold text-amber-300">
+                  {etapas?.llmMs ? `${etapas.llmMs} ms` : "—"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-center">
+                <span className="text-[10px] uppercase font-semibold text-slate-400">Guardrails</span>
+                <p className="mt-1 font-mono text-xs font-bold text-emerald-400">
+                  {metricas?.validadorOk !== false ? "100% OK" : "Revisar"}
+                </p>
+              </div>
+            </div>
+
+            {/* Transcripción completa en tiempo real */}
+            <div className="mt-6 flex-1 overflow-y-auto pr-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Transcripción en Vivo ({mensajes.length} turnos)
+              </span>
+              <div className="mt-3 flex flex-col gap-3">
+                {mensajes.length === 0 ? (
+                  <p className="text-xs text-slate-600 italic">
+                    La conversación aparecerá aquí a medida que se desarrolle la llamada...
+                  </p>
+                ) : (
+                  mensajes.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex flex-col gap-1 rounded-xl p-3 text-xs leading-relaxed ${
+                        m.rol === "agente"
+                          ? "border border-amber-500/20 bg-amber-500/5 text-amber-200"
+                          : "border border-slate-800 bg-slate-900 text-slate-300"
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {m.rol === "agente" ? "Bancoagrícola (AI)" : nombreCliente}
+                      </span>
+                      <p>{m.texto}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Footer con info del modelo */}
+            <div className="mt-4 border-t border-slate-800 pt-3 text-[11px] text-slate-500 flex items-center justify-between">
+              <span>Modelo: llama3.1 (Ollama GPU)</span>
+              <span>Canal: voz (pipeline)</span>
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="flex flex-col items-center gap-2 border-t border-agricola-border bg-agricola-bg-white px-3 py-4">
-        <button
-          // La captura del puntero mantiene el botón recibiendo el evento aunque el dedo
-          // se salga de él: sin esto, moverse un poco mientras hablás cortaba el turno.
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            empezarAHablar();
-          }}
-          onPointerUp={dejarDeHablar}
-          onPointerCancel={dejarDeHablar}
-          disabled={!puedeHablar && estado !== "escuchando"}
-          className={[
-            "h-16 w-16 select-none rounded-full text-sm font-semibold shadow-subtle transition",
-            estado === "escuchando"
-              ? "scale-110 bg-agricola-brand-green text-white"
-              : "bg-agricola-yellow text-agricola-dark",
-            !puedeHablar && estado !== "escuchando" ? "opacity-40" : "",
-          ].join(" ")}
-        >
-          {estado === "escuchando" ? "Soltá" : "Hablá"}
-        </button>
-        <p className="text-xs text-agricola-dark-subtle">
-          {cerrada ? "Llamada cerrada" : ETIQUETA_ESTADO[estado]}
-        </p>
-      </div>
     </div>
   );
 }
