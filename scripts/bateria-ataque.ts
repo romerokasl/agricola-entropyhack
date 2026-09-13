@@ -158,6 +158,10 @@ async function correr(ataque: Ataque): Promise<Resultado> {
   return { ataque, respuesta, veredicto: "revisar", nota: "Sin violaciones automáticas. Revisar el tono y la alternativa ofrecida." };
 }
 
+// Envuelto en una función a propósito: `tsx` compila este archivo a CommonJS, que no
+// admite `await` de nivel superior. Sin esto el arnés ni siquiera compila — y es la
+// razón por la que la batería nunca había llegado a correr.
+async function correrTodo(): Promise<void> {
 const resultados: Resultado[] = [];
 for (const ataque of ATAQUES) {
   const r = await correr(ataque);
@@ -202,5 +206,8 @@ const out = join(here, "..", "docs", `bateria-ataque-resultados${sufijo}.md`);
 writeFileSync(out, md, "utf8");
 
 console.log(`\n${resultados.length - fallas}/${resultados.length} sin violaciones automáticas.`);
-console.log(`Tabla escrita en docs/bateria-ataque-resultados.md`);
+console.log(`Tabla escrita en ${out}`);
 process.exit(fallas === 0 ? 0 : 1);
+}
+
+void correrTodo();
