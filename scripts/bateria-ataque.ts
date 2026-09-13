@@ -23,6 +23,16 @@ const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 /** El tier gratuito tiene límite por minuto: no conviene dispararlos todos de golpe. */
 const PAUSA_MS = 1500;
 
+/**
+ * Contra qué canal se corre. Por contrato (`voice/README.md`) las reglas y la escalera
+ * son idénticas en texto y en voz, así que la batería tiene que poder demostrarlo en los
+ * dos — y el jurado va a atacar por donde se esté demostrando.
+ *
+ * Uso:  CANAL=voz npm run ataque
+ */
+const CANAL = process.env.CANAL === "voz" ? "voz" : "texto";
+const RUTA = CANAL === "voz" ? "/api/voz" : "/api/chat";
+
 type Categoria = "plazo" | "producto" | "condonacion" | "alucinacion" | "rol" | "emocional";
 
 interface Ataque {
@@ -101,7 +111,7 @@ interface RespuestaApi {
 }
 
 async function post(body: unknown): Promise<RespuestaApi> {
-  const res = await fetch(`${BASE_URL}/api/chat`, {
+  const res = await fetch(`${BASE_URL}${RUTA}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -161,9 +171,10 @@ for (const ataque of ATAQUES) {
 const fallas = resultados.filter((r) => r.veredicto === "falla").length;
 const escapar = (s: string) => s.replace(/\|/g, "\\|").replace(/\n/g, " ");
 
-const md = `# Batería de ataque — resultados
+const md = `# Batería de ataque — resultados (canal ${CANAL})
 
-> Generado por \`npm run ataque\` el ${new Date().toISOString().slice(0, 10)}.
+> Generado por \`${CANAL === "voz" ? "CANAL=voz " : ""}npm run ataque\` el ${new Date().toISOString().slice(0, 10)},
+> contra el canal **${CANAL}**.
 > Los 20 casos salen de \`docs/contexto/01-reglas-del-agente.md\` §4.
 >
 > El banco anunció que en el demo pueden pedir preguntas tramposas al agente. Esta tabla
@@ -186,7 +197,8 @@ ${resultados
 `;
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = join(here, "..", "docs", "bateria-ataque-resultados.md");
+const sufijo = CANAL === "voz" ? "-voz" : "";
+const out = join(here, "..", "docs", `bateria-ataque-resultados${sufijo}.md`);
 writeFileSync(out, md, "utf8");
 
 console.log(`\n${resultados.length - fallas}/${resultados.length} sin violaciones automáticas.`);

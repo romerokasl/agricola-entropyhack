@@ -22,19 +22,31 @@ const esquemaConsultarCliente = z.object({}).strict();
 
 const esquemaConsultarOpciones = z.object({}).strict();
 
+/**
+ * Los modelos chicos mandan los números como texto. Medido con llama3.1 en un ensayo:
+ * `registrarAcuerdo` recibió `{"monto":"145","diaAcordado":"16"}` y Zod lo rechazó
+ * entero — justo en el turno de cierre, que es el momento que más importa del demo.
+ *
+ * Convertir es seguro: las validaciones de rango corren después de esto, así que un
+ * "abc" o un día 47 se siguen rechazando igual.
+ */
+const aNumero = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? Number(v) : v);
+
 const esquemaRegistrarAcuerdo = z
   .object({
     tipo: z.string().min(1),
-    diaAcordado: z.number().int().min(1).max(31),
+    diaAcordado: z.preprocess(aNumero, z.number().int().min(1).max(31)),
     // `nullish`, no `optional`: medido con qwen2.5:3b, un modelo puede mandar
     // `monto: null` para decir "sin monto" en vez de omitir el campo. Con `optional`
-    // eso es un error de parseo y el acuerdo no se registra — justo en el turno de
-    // cierre, que es el momento que más importa del demo.
-    monto: z
-      .number()
-      .positive()
-      .nullish()
-      .transform((v) => v ?? undefined),
+    // eso es un error de parseo y el acuerdo no se registra.
+    monto: z.preprocess(
+      aNumero,
+      z
+        .number()
+        .positive()
+        .nullish()
+        .transform((v) => v ?? undefined),
+    ),
   })
   .strict();
 
@@ -114,11 +126,28 @@ function fechaDesdeDia(dia: number, hoy: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-const errorTool = (nombre: string, mensaje: string): ResultadoTool => ({
-  nombre,
-  salida: { error: mensaje },
-  cerroConversacion: false,
-});
+/**
+ * Un error de herramienta vuelve al modelo como dato para que se corrija, pero sin
+ * dejar rastro no se puede saber que pasó: en un ensayo el agente dijo "hubo un error al
+ * registrar el acuerdo" y no había forma de reconstruir con qué argumentos falló.
+ */
+const errorTool = (nombre: string, mensaje: string, argumentos?: unknown): ResultadoTool => {
+  console.error(
+    `[tool] ${nombre} rechazó los argumentos: ${mensaje} · recibido: ${JSON.stringify(argumentos)}`,
+  );
+  return {
+    nombre,
+    salida: {
+      error: mensaje,
+      // Sin esta instrucción el modelo narra la falla: en un ensayo el agente le dijo a
+      // la persona "hubo un error al registrar el acuerdo". Un problema interno nuestro
+      // no es asunto suyo, y nombrarlo destruye la confianza justo al cerrar.
+      instruccion:
+        "Esto es un problema interno. NO se lo menciones a la persona ni le pidas disculpas por él. Corregí los argumentos y volvé a llamar la herramienta.",
+    },
+    cerroConversacion: false,
+  };
+};
 
 export async function ejecutarTool(
   nombre: string,
@@ -175,7 +204,7 @@ export async function ejecutarTool(
   if (nombre === "registrarAcuerdo") {
     const parsed = esquemaRegistrarAcuerdo.safeParse(argumentos);
     if (!parsed.success) {
-      return errorTool(nombre, `Parámetros inválidos: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+      return errorTool(nombre, `Parámetros inválidos: ${parsed.error.issues.map((i) => i.message).join("; ")}`, argumentos);
     }
     const { tipo, diaAcordado, monto } = parsed.data;
 
@@ -185,6 +214,7 @@ export async function ejecutarTool(
       return errorTool(
         nombre,
         `"${tipo}" no es una opción disponible para esta persona. Las disponibles son: ${disponibles}.`,
+        argumentos,
       );
     }
 
