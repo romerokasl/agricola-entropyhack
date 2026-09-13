@@ -127,7 +127,13 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
   const iniciado = useRef(false);
   const reconocedor = useRef<Reconocedor | null>(null);
   const transcripcion = useRef("");
-  const inicioEscucha = useRef(0);
+  /** Respaldo: si soltás antes de que el motor marque un resultado como final. */
+  const ultimoParcial = useRef("");
+  /**
+   * Cuándo soltaste el botón. La etapa STT se mide desde ahí, no desde que lo apretaste:
+   * el tiempo que estuviste hablando es tuyo, no del transcriptor.
+   */
+  const finEscucha = useRef(0);
   const conversacionIdRef = useRef<string | null>(null);
   const finDelHilo = useRef<HTMLDivElement>(null);
 
@@ -260,12 +266,18 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
     const rec = new Constructor();
     rec.lang = "es-SV";
-    rec.continuous = false;
+    // `true` es lo que hace que esto sea push-to-talk de verdad. Con `false` el motor
+    // cierra el turno en la primera pausa y corta a media frase — justo lo que no se le
+    // puede hacer a alguien que titubea hablando de plata.
+    rec.continuous = true;
     rec.interimResults = true;
     transcripcion.current = "";
-    inicioEscucha.current = Date.now();
+    ultimoParcial.current = "";
+    finEscucha.current = 0;
 
     rec.onresult = (e) => {
+      // `e.results` acumula todo lo dicho en esta sesión, así que se rearma completo en
+      // cada evento en vez de ir concatenando (concatenar duplicaría los tramos).
       let finales = "";
       let provisional = "";
       for (let i = 0; i < e.results.length; i += 1) {
@@ -274,8 +286,9 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         if (resultado.isFinal) finales += texto;
         else provisional += texto;
       }
-      if (finales) transcripcion.current = finales;
-      setParcial(provisional || finales);
+      transcripcion.current = finales;
+      ultimoParcial.current = provisional;
+      setParcial((finales + " " + provisional).trim());
     };
 
     rec.onerror = (e) => {
@@ -287,8 +300,10 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
     };
 
     rec.onend = () => {
-      const texto = transcripcion.current.trim();
-      const sttMs = Date.now() - inicioEscucha.current;
+      // Si el motor nunca marcó un final, vale lo provisional: es preferible mandar lo
+      // que se entendió a perder el turno y pedirle a la persona que repita.
+      const texto = (transcripcion.current.trim() || ultimoParcial.current.trim()).trim();
+      const sttMs = finEscucha.current > 0 ? Date.now() - finEscucha.current : 0;
       setParcial("");
       reconocedor.current = null;
       if (texto.length === 0) {
@@ -306,6 +321,8 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
   const dejarDeHablar = useCallback(() => {
     if (estado !== "escuchando") return;
+    finEscucha.current = Date.now();
+    setEstado("pensando");
     reconocedor.current?.stop();
   }, [estado]);
 
@@ -387,9 +404,14 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
       <div className="flex flex-col items-center gap-2 border-t border-agricola-border bg-agricola-bg-white px-3 py-4">
         <button
-          onPointerDown={empezarAHablar}
+          // La captura del puntero mantiene el botón recibiendo el evento aunque el dedo
+          // se salga de él: sin esto, moverse un poco mientras hablás cortaba el turno.
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            empezarAHablar();
+          }}
           onPointerUp={dejarDeHablar}
-          onPointerLeave={dejarDeHablar}
+          onPointerCancel={dejarDeHablar}
           disabled={!puedeHablar && estado !== "escuchando"}
           className={[
             "h-16 w-16 select-none rounded-full text-sm font-semibold shadow-subtle transition",
