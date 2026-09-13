@@ -82,6 +82,18 @@ function aConversacion(fila: FilaConversacion): Conversacion {
   };
 }
 
+function tieneSupabase(): boolean {
+  return Boolean(
+    process.env.SUPABASE_SERVICE_ROLE_KEY &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("example.supabase.co"),
+  );
+}
+
+const memoriaConversaciones = new Map<string, Conversacion>();
+const memoriaTurnos = new Map<string, Array<{ id: string; rol: RolTurno; texto: string; metricas?: MetricasTurno }>>();
+const memoriaAcuerdos = new Map<string, unknown>();
+
 export async function crearConversacion(params: {
   clienteId: string;
   canal: Canal;
@@ -97,6 +109,35 @@ export async function crearConversacion(params: {
   motivoContacto?: MotivoContacto | null;
 }): Promise<Conversacion> {
   const { senal } = params;
+
+  if (!tieneSupabase()) {
+    const id = crypto.randomUUID();
+    const conv: Conversacion = {
+      id,
+      clienteId: params.clienteId,
+      canal: params.canal,
+      modoVoz: params.modoVoz,
+      apertura: params.apertura,
+      estado: "abierta",
+      senal: senal
+        ? {
+            score: senal.score,
+            banda: senal.banda,
+            claseSSF: senal.claseSSF,
+            fuente: senal.fuente,
+            componenteModeloVivo: senal.componenteModeloVivo,
+            componenteRegistro: senal.componenteRegistro,
+            componenteReglas: senal.componenteReglas,
+            escalonSugerido: senal.escalonSugerido,
+            factores: senal.factores,
+          }
+        : null,
+      motivoContacto: params.motivoContacto ?? null,
+    };
+    memoriaConversaciones.set(id, conv);
+    memoriaTurnos.set(id, []);
+    return conv;
+  }
 
   return conReintentos("No se pudo crear la conversación", async () => {
     const { data, error } = await getSupabaseAdmin()
@@ -126,6 +167,10 @@ export async function crearConversacion(params: {
 }
 
 export function obtenerConversacion(id: string): Promise<Conversacion | null> {
+  if (!tieneSupabase()) {
+    return Promise.resolve(memoriaConversaciones.get(id) ?? null);
+  }
+
   return conReintentos(`No se pudo leer la conversación ${id}`, async () => {
     const { data, error } = await getSupabaseAdmin()
       .from("conversaciones")
@@ -139,6 +184,11 @@ export function obtenerConversacion(id: string): Promise<Conversacion | null> {
 }
 
 export function obtenerTurnos(conversacionId: string): Promise<Turno[]> {
+  if (!tieneSupabase()) {
+    const list = memoriaTurnos.get(conversacionId) ?? [];
+    return Promise.resolve(list.map((t) => ({ rol: t.rol, texto: t.texto })));
+  }
+
   return conReintentos("No se pudieron leer los turnos", async () => {
     const { data, error } = await getSupabaseAdmin()
       .from("turnos")
@@ -170,6 +220,14 @@ export async function agregarTurno(params: {
   metricas?: MetricasTurno;
 }): Promise<string> {
   const { indice, metricas } = params;
+
+  if (!tieneSupabase()) {
+    const id = crypto.randomUUID();
+    const list = memoriaTurnos.get(params.conversacionId) ?? [];
+    list.push({ id, rol: params.rol, texto: params.texto, metricas: params.metricas });
+    memoriaTurnos.set(params.conversacionId, list);
+    return Promise.resolve(id);
+  }
 
   return conReintentos("No se pudo guardar el turno", async () => {
     const { data, error } = await getSupabaseAdmin()
@@ -207,6 +265,8 @@ export async function agregarTurno(params: {
  * falla, la conversación no se entera.
  */
 export async function registrarLatenciaTts(turnoId: string, latenciaMs: number): Promise<void> {
+  if (!tieneSupabase()) return;
+
   const { error } = await getSupabaseAdmin()
     .from("turnos")
     .update({ latencia_tts_ms: latenciaMs })
@@ -222,6 +282,14 @@ export async function guardarAcuerdo(params: {
   monto: number | null;
   fechaAcordada: string;
 }): Promise<void> {
+  if (!tieneSupabase()) {
+    memoriaAcuerdos.set(params.conversacionId, params);
+    const estado: EstadoConversacion =
+      params.tipo === "pase_humano" ? "escalada_humano" : "cerrada_con_acuerdo";
+    await cerrarConversacion(params.conversacionId, estado);
+    return;
+  }
+
   await conReintentos("No se pudo registrar el acuerdo", async () => {
     const { error } = await getSupabaseAdmin().from("acuerdos").insert({
       conversacion_id: params.conversacionId,
@@ -242,6 +310,12 @@ export async function guardarNoAcuerdo(params: {
   conversacionId: string;
   motivo: string;
 }): Promise<void> {
+  if (!tieneSupabase()) {
+    memoriaAcuerdos.set(params.conversacionId, params);
+    await cerrarConversacion(params.conversacionId, "cerrada_sin_acuerdo");
+    return;
+  }
+
   await conReintentos("No se pudo registrar el no-acuerdo", async () => {
     const { error } = await getSupabaseAdmin().from("acuerdos").insert({
       conversacion_id: params.conversacionId,
@@ -256,6 +330,12 @@ export async function cerrarConversacion(
   id: string,
   estado: EstadoConversacion,
 ): Promise<void> {
+  if (!tieneSupabase()) {
+    const conv = memoriaConversaciones.get(id);
+    if (conv) conv.estado = estado;
+    return;
+  }
+
   await conReintentos("No se pudo cerrar la conversación", async () => {
     const { error } = await getSupabaseAdmin()
       .from("conversaciones")

@@ -9,7 +9,11 @@ function error(code: string, message: string, status: number) {
 }
 
 /** Transcripción y registro de una conversación. Shape: `DetalleConversacion`. */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(
+  _req: Request,
+  context: { params: Promise<{ id: string }> | { id: string } },
+) {
+  const params = await Promise.resolve(context.params);
   if (!esIdConversacionValido(params.id)) {
     return error("VALIDATION_ERROR", "El id de conversación tiene que ser un UUID.", 400);
   }

@@ -175,3 +175,62 @@ export function validar(respuesta: string, ctx: ContextoValidacion): ResultadoVa
 export function respuestaSegura(cliente: Cliente): string {
   return `${cliente.nombre}, soy el asistente de Bancoagrícola. Dejame confirmar esa opción con el área encargada y te escribo de nuevo. ¿Te parece si lo vemos con un asesor?`;
 }
+
+const PATRON_EMERGENCIA = /\b(?:suicid\w*|matar\w*|quitarme la vida|acabar con mi vida)\b/i;
+
+/** Detecta emergencias humanas extremas o amenazas a la vida para transferir de inmediato sin LLM. */
+export function esEmergenciaHumana(texto: string): boolean {
+  return PATRON_EMERGENCIA.test(texto);
+}
+
+const REEMPLAZOS_VOSEO: Array<[RegExp, string]> = [
+  [/\bquieres\b/g, "querés"],
+  [/\bQuieres\b/g, "Querés"],
+  [/\bpuedes\b/g, "podés"],
+  [/\bPuedes\b/g, "Podés"],
+  [/\btienes\b/g, "tenés"],
+  [/\bTienes\b/g, "Tenés"],
+  [/\bsabes\b/g, "sabés"],
+  [/\bSabes\b/g, "Sabés"],
+  [/\bdices\b/g, "decís"],
+  [/\bDices\b/g, "Decís"],
+  [/\bhaces\b/g, "hacés"],
+  [/\bHaces\b/g, "Hacés"],
+  [/\bentiendes\b/g, "entendés"],
+  [/\bEntiendes\b/g, "Entendés"],
+  [/\bpiensas\b/g, "pensás"],
+  [/\bPiensas\b/g, "Pensás"],
+  [/\bdime\b/g, "decime"],
+  [/\bDime\b/g, "Decime"],
+  [/\bcuéntame\b/g, "contame"],
+  [/\bCuéntame\b/g, "Contame"],
+  [/\bavísame\b/g, "avisame"],
+  [/\bAvísame\b/g, "Avisame"],
+  [/\bcontigo\b/g, "con vos"],
+  [/\bContigo\b/g, "Con vos"],
+  [/\bpara ti\b/g, "para vos"],
+  [/\bPara ti\b/g, "Para vos"],
+  [/\ba ti\b/g, "a vos"],
+  [/\bA ti\b/g, "A vos"],
+  [/\btú\b/g, "vos"],
+  [/\bTú\b/g, "Vos"],
+];
+
+/** Normaliza tuteos accidentales al voseo salvadoreño natural. */
+export function corregirVoseo(texto: string): string {
+  let resultado = texto;
+  for (const [patron, reemplazo] of REEMPLAZOS_VOSEO) {
+    resultado = resultado.replace(patron, reemplazo);
+  }
+  return resultado;
+}
+
+/** Trunca un texto a un máximo de frases completas sin cortar palabras. */
+export function truncarAFrases(texto: string, maxFrases: number = 3): string {
+  const trimmed = texto.trim();
+  if (trimmed.length === 0) return trimmed;
+  const frases = trimmed.split(/(?<=[.!?]+)(?:\s+|$)/).filter((f) => f.trim().length > 0);
+  if (frases.length <= maxFrases) return trimmed;
+  return frases.slice(0, maxFrases).join(" ").trim();
+}
+

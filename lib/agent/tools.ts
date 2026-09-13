@@ -5,7 +5,7 @@ import type { SenalRiesgo } from "../riesgo/types";
 import { diagnosticar } from "./calendario";
 import { ESCALERA, opcionesValidasPara } from "./ladder";
 import type { DeclaracionTool } from "./llm";
-import type { Cliente } from "./types";
+import type { Cliente, TipoCierre } from "./types";
 
 /**
  * Tools tipadas. El modelo razona la conversación; los datos y las reglas vienen de
@@ -112,6 +112,7 @@ export interface ResultadoTool {
   salida: Record<string, unknown>;
   /** true cuando el acuerdo (o no-acuerdo) quedó registrado y la conversación cerró. */
   cerroConversacion: boolean;
+  tipoCierre?: TipoCierre | null;
 }
 
 /** Convierte un día del mes en una fecha real, saltando al mes siguiente si ya pasó. */
@@ -254,6 +255,7 @@ export async function ejecutarTool(
         fechaAcordada,
       },
       cerroConversacion: true,
+      tipoCierre: "acuerdo",
     };
   }
 
@@ -263,7 +265,7 @@ export async function ejecutarTool(
       return errorTool(nombre, "Hace falta un motivo de al menos 3 caracteres.");
     }
     await guardarNoAcuerdo({ conversacionId, motivo: parsed.data.motivo });
-    return { nombre, salida: { registrado: true }, cerroConversacion: true };
+    return { nombre, salida: { registrado: true }, cerroConversacion: true, tipoCierre: "no_acuerdo" };
   }
 
   return errorTool(nombre, `La herramienta "${nombre}" no existe.`);

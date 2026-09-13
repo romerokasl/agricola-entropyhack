@@ -1,4 +1,4 @@
-import { agregarTurno } from "../db/conversaciones";
+import { agregarTurno, guardarNoAcuerdo } from "../db/conversaciones";
 import type { SenalRiesgo } from "../riesgo/types";
 import { obtenerLlmProvider, type MensajeLlm } from "./llm";
 import {
@@ -9,8 +9,15 @@ import {
   VERSION_PROMPT,
 } from "./prompt";
 import { DECLARACIONES, ejecutarTool } from "./tools";
-import type { Apertura, Canal, Cliente, Turno } from "./types";
-import { respuestaSegura, validar, type MotivoRechazo } from "./validator";
+import type { Apertura, Canal, Cliente, TipoCierre, Turno } from "./types";
+import {
+  corregirVoseo,
+  esEmergenciaHumana,
+  respuestaSegura,
+  truncarAFrases,
+  validar,
+  type MotivoRechazo,
+} from "./validator";
 
 /**
  * Un turno del agente: contexto → LLM (con tools) → validador → persistencia.
@@ -39,6 +46,7 @@ export interface ResultadoTurno {
   tokensOut: number | null;
   modeloVersion: string;
   cerroConversacion: boolean;
+  tipoCierre?: TipoCierre | null;
   /**
    * Para completar después la latencia del TTS, que ocurre una vez que el turno ya
    * está persistido.
@@ -78,6 +86,51 @@ export async function ejecutarTurno(params: {
   const { cliente, conversacionId, apertura, historial, senal } = params;
   const hoy = params.hoy ?? new Date();
   const canal = params.canal ?? "texto";
+  const inicio = Date.now();
+
+  // Guardrail de emergencia humana: intercepción determinista inmediata sin consultar al LLM
+  const ultimoCliente = [...historial].reverse().find((t) => t.rol === "cliente");
+  if (ultimoCliente && esEmergenciaHumana(ultimoCliente.texto)) {
+    const motivoEmergencia = "Emergencia humana detectada: derivación inmediata a asesor humano.";
+    await guardarNoAcuerdo({ conversacionId, motivo: motivoEmergencia });
+
+    const textoEmergencia = `${cliente.nombre}, tu vida y tu bienestar son lo más importante para nosotros. Detengo esta gestión de inmediato y te comunico con un asesor humano para que te apoye.`;
+
+    const turnoId = await agregarTurno({
+      conversacionId,
+      indice: historial.length,
+      rol: "agente",
+      texto: textoEmergencia,
+      metricas: {
+        latenciaMs: Date.now() - inicio,
+        tokensIn: 0,
+        tokensOut: 0,
+        validadorOk: true,
+        validadorMotivo: null,
+        modeloVersion: "guardrail-emergencia",
+        latenciaSttMs: params.latenciaSttMs ?? null,
+        latenciaLlmMs: 0,
+        latenciaValidadorMs: 0,
+        latenciaTtsMs: null,
+      },
+    });
+
+    return {
+      texto: textoEmergencia,
+      validadorOk: true,
+      validadorMotivo: null,
+      latenciaMs: Date.now() - inicio,
+      latenciaSttMs: params.latenciaSttMs ?? null,
+      latenciaLlmMs: 0,
+      latenciaValidadorMs: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      modeloVersion: "guardrail-emergencia",
+      cerroConversacion: true,
+      tipoCierre: "no_acuerdo",
+      turnoId,
+    };
+  }
 
   const proveedor = obtenerLlmProvider();
 
@@ -86,8 +139,6 @@ export async function ejecutarTurno(params: {
   // nada. Ver `EJEMPLOS_BREVEDAD` para el porqué medido.
   const base = construirContexto(cliente, apertura, hoy, senal, canal);
   const contexto = proveedor.nombre === "ollama" ? `${base}\n${EJEMPLOS_BREVEDAD}` : base;
-
-  const inicio = Date.now();
 
   const mensajes: MensajeLlm[] = aMensajes(historial);
   const esPrimerMensajeDelAgente = !historial.some((t) => t.rol === "agente");
@@ -102,6 +153,7 @@ export async function ejecutarTurno(params: {
   let tokensIn: number | null = null;
   let tokensOut: number | null = null;
   let cerroConversacion = false;
+  let tipoCierre: TipoCierre | null = null;
   let texto = "";
   let truncada = false;
 
@@ -157,7 +209,10 @@ export async function ejecutarTurno(params: {
         hoy,
         senal,
       });
-      if (resultado.cerroConversacion) cerroConversacion = true;
+      if (resultado.cerroConversacion) {
+        cerroConversacion = true;
+        tipoCierre = resultado.tipoCierre ?? null;
+      }
       mensajes.push({
         rol: "tool",
         texto: "",
@@ -167,6 +222,8 @@ export async function ejecutarTurno(params: {
   }
 
   // --- Validación: un reintento correctivo, después respuesta segura ---------
+  // Normalizar voseo y acotar a máximo 3 frases antes del chequeo determinista
+  texto = truncarAFrases(corregirVoseo(texto), 3);
   const ctxValidacion = { cliente, historial, esPrimerMensajeDelAgente, senal };
   // Una respuesta cortada a media frase nunca se muestra, aunque el resto pase.
   const validacion = truncada
@@ -199,9 +256,10 @@ export async function ejecutarTurno(params: {
         latenciaLlmMs += ms;
       },
     );
-    const segundaValidacion = validarCronometrado(reintento.texto, ctxValidacion);
+    let textoReintento = truncarAFrases(corregirVoseo(reintento.texto), 3);
+    const segundaValidacion = validarCronometrado(textoReintento, ctxValidacion);
     if (segundaValidacion.ok) {
-      texto = reintento.texto;
+      texto = textoReintento;
       tokensIn = reintento.tokensIn;
       tokensOut = reintento.tokensOut;
     } else {
@@ -250,6 +308,7 @@ export async function ejecutarTurno(params: {
     tokensOut,
     modeloVersion,
     cerroConversacion,
+    tipoCierre,
     turnoId,
   };
 }

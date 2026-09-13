@@ -221,6 +221,7 @@ export async function POST(req: NextRequest) {
         hablado,
         audio,
         cerrada: respuesta.cerrada,
+        tipoCierre: respuesta.tipoCierre,
         metricas: {
           // `latenciaMs` es el campo común con S2S. El desglose por etapa es el extra
           // que solo la cascada puede dar.

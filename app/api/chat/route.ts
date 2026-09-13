@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
         conversacionId: respuesta.conversacionId,
         turnos: [{ rol: "agente", texto: respuesta.turno.texto }],
         cerrada: respuesta.cerrada,
+        tipoCierre: respuesta.tipoCierre,
         metricas: {
           latenciaMs: respuesta.turno.latenciaMs,
           tokensIn: respuesta.turno.tokensIn,

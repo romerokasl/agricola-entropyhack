@@ -16,6 +16,8 @@ export type EstadoConversacion =
   | "cerrada_sin_acuerdo"
   | "escalada_humano";
 
+export type TipoCierre = "acuerdo" | "no_acuerdo";
+
 export interface Cliente {
   id: string;
   slug: string;

@@ -24,7 +24,7 @@ import {
 import { esPlazoValido, opcionesValidasPara } from "../lib/agent/ladder";
 import { construirContexto } from "../lib/agent/prompt";
 import type { Cliente } from "../lib/agent/types";
-import { validar } from "../lib/agent/validator";
+import { corregirVoseo, esEmergenciaHumana, truncarAFrases, validar } from "../lib/agent/validator";
 import { senalSinRed } from "../lib/riesgo";
 import { derivarFeatures } from "../lib/riesgo/features";
 import { puntuarReglas } from "../lib/riesgo/reglas";
@@ -413,6 +413,25 @@ const pruebas: Array<[string, () => void | Promise<void>]> = [
     // Es fonético: si no hay números, el texto tiene que salir intacto.
     const escrito = "Cuidemos tu récord crediticio con opciones a tu medida.";
     assert.equal(normalizarParaVoz(escrito), escrito);
+  }],
+
+  // --- Guardrails de voz y emergencias -------------------------------------
+  ["Detección de emergencia humana / código rojo", () => {
+    assert.ok(esEmergenciaHumana("Si no me ayudás me voy a matar."));
+    assert.ok(esEmergenciaHumana("Prefiero quitarme la vida"));
+    assert.ok(esEmergenciaHumana("Me voy a suicidar"));
+    assert.ok(!esEmergenciaHumana("Hola Karla, ¿cómo estás?"));
+    assert.ok(!esEmergenciaHumana("Te pago el próximo 15."));
+  }],
+  ["Corrección de voseo salvadoreño", () => {
+    assert.equal(corregirVoseo("si quieres puedes pagar"), "si querés podés pagar");
+    assert.equal(corregirVoseo("Dime si tienes tiempo"), "Decime si tenés tiempo");
+    assert.equal(corregirVoseo("Esto es para ti"), "Esto es para vos");
+  }],
+  ["Truncado limpio a 3 frases", () => {
+    const cuatroFrases = "Hola Karla. Soy el asistente de Bancoagrícola. Tu cuota es $145.00. ¿Podrías pagar mañana?";
+    const tresFrases = truncarAFrases(cuatroFrases, 3);
+    assert.equal(tresFrases, "Hola Karla. Soy el asistente de Bancoagrícola. Tu cuota es $145.00.");
   }],
 ];
 

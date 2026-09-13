@@ -9,7 +9,7 @@ import { obtenerSenalRiesgo, rehidratarSenal } from "../riesgo";
 import type { SenalRiesgo } from "../riesgo/types";
 import { diagnosticar } from "./calendario";
 import { ejecutarTurno, type ResultadoTurno } from "./orchestrator";
-import type { Apertura, Canal, Cliente, ModoVoz, Turno } from "./types";
+import type { Apertura, Canal, Cliente, ModoVoz, TipoCierre, Turno } from "./types";
 
 /**
  * La conversación, sin canal.
@@ -51,6 +51,7 @@ export interface RespuestaConversacion {
   conversacionId: string;
   turno: ResultadoTurno;
   cerrada: boolean;
+  tipoCierre?: TipoCierre | null;
 }
 
 /**
@@ -219,5 +220,6 @@ export async function continuarConversacion(params: {
     conversacionId: params.conversacionId,
     turno,
     cerrada: turno.cerroConversacion,
+    tipoCierre: turno.tipoCierre,
   };
 }
