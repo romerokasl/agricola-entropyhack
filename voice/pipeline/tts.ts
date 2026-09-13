@@ -183,7 +183,7 @@ function crearEdgeTtsProvider(): TtsProvider {
 
 /**
  * Proveedor Google Cloud Text-to-Speech con voces WaveNet.
- * Requiere GOOGLE_APPLICATION_CREDENTIALS o GOOGLE_CLOUD_API_KEY en .env.local
+ * Requiere GOOGLE_APPLICATION_CREDENTIALS_JSON en .env.local (Service Account JSON)
  *
  * VOCES WAVENET DISPONIBLES (es-SV / es-MX):
  * - es-SV-Standard-A: Masculina, acento salvadoreño natural ⭐⭐⭐⭐⭐
@@ -194,13 +194,20 @@ function crearEdgeTtsProvider(): TtsProvider {
  */
 function crearGoogleCloudTtsProvider(): TtsProvider {
   const voz = process.env.GOOGLE_CLOUD_VOZ ?? "es-SV-Neural2-A";
-  const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
   const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+  const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
 
-  if (!apiKey && !projectId) {
+  if (!credentialsJson || !projectId) {
     throw new Error(
-      "Google Cloud TTS requiere GOOGLE_CLOUD_API_KEY o GOOGLE_APPLICATION_CREDENTIALS en .env.local",
+      "Google Cloud TTS requiere GOOGLE_APPLICATION_CREDENTIALS_JSON y GOOGLE_CLOUD_PROJECT_ID en .env.local",
     );
+  }
+
+  let credentials: Record<string, unknown>;
+  try {
+    credentials = JSON.parse(credentialsJson);
+  } catch {
+    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON no es un JSON válido");
   }
 
   return {
@@ -211,7 +218,7 @@ function crearGoogleCloudTtsProvider(): TtsProvider {
 
       try {
         const client = new textToSpeech.TextToSpeechClient({
-          apiKey: apiKey,
+          credentials: credentials,
           projectId: projectId,
         });
 
