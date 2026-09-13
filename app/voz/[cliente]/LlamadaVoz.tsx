@@ -485,8 +485,12 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
         const json = (await res.json()) as RespuestaApi;
 
         if (!json.success || !json.data) {
-          // Auto-recuperación si la conversación se perdió en el servidor
-          if (json.error?.message?.includes("no existe")) {
+          // Auto-recuperación si la conversación se perdió o se cerró en el servidor
+          if (
+            json.error?.message?.includes("no existe") ||
+            json.error?.message?.includes("cerrada") ||
+            res.status === 409
+          ) {
             const reintento = await fetch("/api/voz", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -532,6 +536,14 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
 
         if (json.data.cerrada) {
           setCerrada(true);
+          procesandoRef.current = false;
+          if (textoRespuesta) {
+            await reproducirVozAgente(json.data.hablado ?? textoRespuesta, json.data.audio);
+          }
+          setTimeout(() => {
+            if (!finLlamadaRef.current) colgarLlamada();
+          }, 1800);
+          return;
         }
 
         // Reproducir la respuesta del agente

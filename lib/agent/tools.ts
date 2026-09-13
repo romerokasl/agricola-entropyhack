@@ -18,9 +18,9 @@ import type { Cliente, TipoCierre } from "./types";
  * y el código calcula la fecha). Así no puede inventar ninguno de los dos.
  */
 
-const esquemaConsultarCliente = z.object({}).strict();
+const esquemaConsultarCliente = z.object({}).passthrough();
 
-const esquemaConsultarOpciones = z.object({}).strict();
+const esquemaConsultarOpciones = z.object({}).passthrough();
 
 /**
  * Los modelos chicos mandan los números como texto. Medido con llama3.1 en un ensayo:
