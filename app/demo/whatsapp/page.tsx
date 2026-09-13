@@ -355,7 +355,7 @@ export default function PaginaDemoWhatsapp() {
           <ToggleGroup
             type="single"
             value={slug}
-            onValueChange={(v) => v && setSlug(v)}
+            onValueChange={(v: string) => v && setSlug(v)}
             className="gap-1.5 rounded-xl bg-white/[0.06] p-1.5"
           >
             {ESCENARIOS.map((e) => (
