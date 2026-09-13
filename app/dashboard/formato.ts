@@ -52,10 +52,20 @@ export function duracion(segundos: number | null): string {
   return `${Math.floor(total / 60)} min ${total % 60} s`;
 }
 
+/**
+ * Node y el ICU del navegador no escriben el mismo separador antes de "a. m.":
+ * uno usa espacio estrecho sin salto (U+202F) y el otro espacio duro (U+00A0).
+ * Con la fecha renderizada dentro de un Client Component eso rompe la hidratación
+ * con un texto que a simple vista es idéntico. Se normaliza a espacio normal.
+ */
+function normalizarEspacios(s: string): string {
+  return s.replace(/[  ]/g, " ");
+}
+
 export function fecha(iso: string | null): string {
   if (iso === null) return SIN_DATO;
   const t = Date.parse(iso);
-  return Number.isFinite(t) ? FECHA.format(t) : iso;
+  return Number.isFinite(t) ? normalizarEspacios(FECHA.format(t)) : iso;
 }
 
 export const ETIQUETA_ESTADO: Record<EstadoConversacion, string> = {

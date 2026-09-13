@@ -15,27 +15,8 @@ del contrato. Si una vista necesita una cifra nueva, se agrega en
 Formato de las respuestas: `{ success: true, data }` o `{ success: false, error: { code, message } }`.
 Códigos de error: `VALIDATION_ERROR` (400, id que no es UUID), `NOT_FOUND` (404) y `SERVER_ERROR` (500).
 
-La vista vive en [`components/dashboard/`](../components/dashboard) y es puramente
-presentacional: recibe el `ResumenDashboard` ya calculado y no deriva ninguna métrica.
-`app/dashboard/formato.ts` sigue siendo el único lugar donde se convierte a texto.
-
-| Archivo | Qué hace |
-|---|---|
-| `app/dashboard/page.tsx` | Server Component: llama a `obtenerResumenDashboard()` y se lo pasa a la vista |
-| `components/dashboard/DashboardVista.tsx` | Orquesta paneles y pestañas; puede re-pedir los datos a `GET /api/dashboard` |
-| `components/dashboard/graficos.tsx` | Barras, apilado y percentiles en SVG/CSS (sin librería de charting) |
-| `components/dashboard/TablaAuditoria.tsx` | La tabla fila por fila, con filtro por estado |
-| `lib/dashboard/cliente.ts` | Cliente tipado de la API, para consumir el contrato desde el navegador |
-
-La paleta de datos (`--viz-*` en `app/globals.css`) no está elegida a ojo: la rampa
-ordinal se generó en OKLCH sobre el azul de marca y pasa las comprobaciones de
-lightness monotónica, ΔL y contraste; los colores de estado pasan separación CVD. El
-ámbar queda bajo 3:1 contra blanco, así que **toda barra de estado lleva su cifra
-visible** — ese es el canal de alivio, no un adorno.
-
-`/dashboard/ejemplo` renderiza la misma vista con filas de entrada sintéticas (los
-números los calcula `calcularResumen` real) para poder trabajar la UI con la base
-vacía. Lleva banner permanente y se borra con `rm -r app/dashboard/ejemplo`.
+La vista actual ([`app/dashboard/`](../app/dashboard)) es deliberadamente mínima. Se
+puede reemplazar entera: `formato.ts` (formato y etiquetas en español) se puede reutilizar.
 
 ## Reglas que la UI tiene que respetar
 
