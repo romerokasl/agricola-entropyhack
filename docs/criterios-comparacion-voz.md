@@ -131,25 +131,26 @@ Utilicen esta tabla para consignar los hallazgos con datos concretos y fuentes c
 
 | Dimensión / Criterio | Métrica / Unidad | Opción A: Cascada (STT → LLM → TTS) | Opción B: S2S Nativo (Audio-to-Audio) | Fuente / Evidencia / Proveedores Probados |
 |---|---|---|---|---|
-| **1. Latencia** | TTFB promedio | [ ] ms | [ ] ms | |
-| | Latencia total de turno | [ ] ms | [ ] ms | |
-| | Precisión de VAD / Pausas | Alta / Media / Baja | Alta / Media / Baja | |
-| | Tiempo de interrupción (Barge-in) | [ ] ms | [ ] ms | |
-| **2. Guardrails** | Intercepción previa a voz | Sí / No | Sí / No | |
-| | Eficacia contra jailbreaks | % éxito | % éxito | |
-| | Sanitización de PII | Sencilla / Compleja | Sencilla / Compleja | |
-| **3. Trazabilidad** | Transcripción de texto nativa | Nativa / Requiere proceso extra | Nativa / Requiere proceso extra | |
-| | Latencia de Tool Calling | [ ] ms adicionales | [ ] ms adicionales | |
-| | Extracción de datos del acuerdo | Fiable / Inestable | Fiable / Inestable | |
-| **4. Calidad** | Aceptación del voseo salvadoreño | 1 a 10 | 1 a 10 | |
-| | Modulación prosódica empática | 1 a 10 | 1 a 10 | |
-| | Pronunciación de montos y siglas | Correcta / Errores | Correcta / Errores | |
-| **5. Costos** | Costo por minuto | $[ ] USD | $[ ] USD | |
-| | Costo por llamada de 3 min | $[ ] USD | $[ ] USD | |
-| | Costo mensual (30k llamadas) | $[ ] USD | $[ ] USD | |
-| **6. Infraestructura**| Nivel de Vendor Lock-in | Nulo / Parcial / Total | Nulo / Parcial / Total | |
-| | Opción de self-hosting / On-prem| Sí / No | Sí / No | |
-| | Soporte SIP / Telefonía | Maduro / Experimental | Maduro / Experimental | |
+| **1. Latencia** | TTFB promedio | ~200–400 ms con streaming (Deepgram Nova-3 STT ~150 ms + Groq Llama 3.3 TTFB ~100–200 ms) | **Gemini 2.5 Flash Live**: 100–200 ms · **OpenAI gpt-realtime-2.1**: ~300–500 ms · **Moshi** (self-host, GPU L4): ~160–200 ms teórico | Google Cloud docs Gemini 2.5 Flash Live; OpenAI Realtime docs; Kyutai/arXiv 2410.00037 |
+| | Latencia total de turno | 700 ms–1.5 s con streaming bien encadenado; 2–4 s sin streaming (peor caso aceptado por el banco) | Gemini: ~300–500 ms · OpenAI: ~500 ms–1 s · Moshi: ~200–400 ms | mismas fuentes |
+| | Precisión de VAD / Pausas | Alta (Deepgram VAD con umbral configurable 500/800 ms) | Alta en Gemini/OpenAI (VAD server-side configurable) · Moshi es full-duplex "sin turnos" — no hay EOU discreto que ajustar | docs de proveedores |
+| | Tiempo de interrupción (Barge-in) | Depende de implementación propia; con diseño cuidado ~150–300 ms | Nativo en el protocolo de Gemini/OpenAI Realtime · Moshi es full-duplex por diseño (interrupción instantánea) | OpenAI/Google realtime docs; Kyutai paper |
+| **2. Guardrails** | Intercepción previa a voz | **Sí, trivial** — el LLM siempre devuelve texto antes del TTS; el validador determinista corre ahí sin excepción | **No garantizado**. La propia documentación de OpenAI (LiteLLM Realtime Guardrails / Agents SDK) confirma que en el SDK de Python **"el modelo todavía dice el contenido bloqueado"** antes de que el guardrail pueda cortarlo; el bloqueo real solo existe en el SDK de Node. Gemini Live no publica un punto de intercepción pre-síntesis | docs.litellm.ai Realtime Guardrails; openai-agents-python issue #1912 |
+| | Eficacia contra jailbreaks | Alta — cualquier regex/lista se aplica sobre texto plano sin ambigüedad | Depende del modelo base; sin punto de intercepción confiable, una fuga es estructural (de arquitectura), no solo de prompt | análisis propio sobre la arquitectura |
+| | Sanitización de PII | Sencilla — el texto intermedio se enmascara (regex) antes de loguear o reenviar a terceros | Compleja — el DUI/cuenta puede vivir solo en tokens de audio; enmascararlo exige correr un ASR paralelo, lo que anula la ventaja de latencia de usar S2S | análisis propio |
+| **3. Trazabilidad** | Transcripción de texto nativa | Nativa por diseño — es el output directo del STT | Derivada, no nativa: OpenAI y Gemini exponen "transcripts" como canal secundario. **Excepción:** Moshi genera un monólogo interno de texto sincronizado con el audio como parte de su arquitectura (Mimi codec) | OpenAI Realtime docs (transcript deltas); arXiv 2410.00037 (Moshi) |
+| | Latencia de Tool Calling | Nativo, sin penalidad extra (mismo LLM call) | Soportado nativamente en OpenAI Realtime y Gemini Live (function calling en paralelo al audio) · **No soportado de forma productiva en Moshi/Mini-Omni** — exigiría ingeniería propia desde cero | docs de function calling de OpenAI/Google |
+| | Extracción de datos del acuerdo | Fiable — mismo LLM que ya devuelve JSON estructurado vía tools | Fiable en OpenAI/Gemini (misma capa de function calling) · Inestable/no soportado en Moshi/Mini-Omni | igual |
+| **4. Calidad** | Aceptación del voseo salvadoreño | Alta si se elige TTS con voces LatAm (ElevenLabs/Cartesia ofrecen es-419); STT multilingüe ya maduro en español | **No verificado por ningún proveedor** — ni OpenAI ni Google publican evaluación de voseo salvadoreño. Moshi/Mini-Omni están entrenados mayormente en inglés/francés — calidad en español pobre, **descalifica para este proyecto** | sin fuente verificada — riesgo declarado explícitamente |
+| | Modulación prosódica empática | Depende del TTS elegido (ElevenLabs/Cartesia con buen control emocional, ya evaluado) | Teóricamente superior (un solo modelo controla prosodia end-to-end) pero sin datos verificados en español salvadoreño | — |
+| | Pronunciación de montos y siglas | Controlable — normalizador de texto antes del TTS ("$125.50" → "ciento veinticinco dólares con cincuenta") | No controlable directamente — no existe un paso de texto intermedio que normalizar antes de sintetizar | — |
+| **5. Costos** (30,000 clientes × 3 min/mes ≈ 90,000 min/mes) | Costo por minuto | Stack económico (Deepgram Nova-3 + Groq Llama 3.3 + TTS económico): **~$0.05–0.15/min** | **Gemini 2.5 Flash Live**: ~$0.05/min · **OpenAI gpt-realtime-2.1**: $0.06–0.11/min (variante *mini*: $0.02–0.05/min) · **Moshi self-hosted**: ~$0/min marginal, solo el costo fijo de una GPU L4 24/7 (~$0.40–0.70/h) | Deepgram pricing; OpenAI/Google pricing pages; HackerNoon "Realtime API Pricing 2026" |
+| | Costo por llamada de 3 min | $0.15–$0.45 | Gemini: ~$0.15 · OpenAI flagship: ~$0.18–0.33 · OpenAI mini: ~$0.06–0.15 | cálculo propio sobre el pricing citado |
+| | Costo mensual (30k llamadas) | ~$4,500–$13,500/mes | Gemini: ~$4,500/mes · OpenAI flagship: ~$5,400–$9,900/mes · OpenAI mini: ~$1,800–$4,500/mes · **Moshi: costo fijo ~$300–500/mes de GPU, independiente del volumen** | cálculo propio sobre el pricing citado |
+| | Modelo de facturación | Por segundo/carácter, según el componente (fácil de auditar por etapa) | Por **token de audio**: 1 token/100ms usuario, 1 token/50ms del agente — un silencio largo del cliente sigue consumiendo tokens de entrada | OpenAI Realtime docs |
+| **6. Infraestructura**| Nivel de Vendor Lock-in | **Bajo** — cada etapa (STT/LLM/TTS) es reemplazable de forma independiente sin tocar las otras | **Total** — el proveedor controla voz + razonamiento + guardrails como una sola caja negra. Excepción: Moshi (pesos abiertos, CC BY 4.0) | análisis propio |
+| | Opción de self-hosting / On-prem | Sí, parcial (LLM local tipo Llama vía Ollama/Groq; STT/TTS locales: Whisper, Piper) | No en OpenAI/Gemini · **Sí en Moshi** (pero ecosistema inmaduro para producción bancaria hoy) | Kyutai GitHub (kyutai-labs/moshi) |
+| | Soporte SIP / Telefonía | Maduro (Twilio, Asterisk, LiveKit se integran con cualquier STT/TTS) | Maduro solo vía integradores terceros (Twilio ↔ OpenAI Realtime) · Gemini Live más limitado en telefonía tradicional · Moshi sin soporte productivo | Twilio/OpenAI integration docs |
 
 ---
 
@@ -158,6 +159,123 @@ Utilicen esta tabla para consignar los hallazgos con datos concretos y fuentes c
 Una vez completada la tabla, el equipo se reunirá para responder:
 
 1. **¿Cuál arquitectura garantiza que una alucinación sobre condonación o plazos ilegales NUNCA suene en el teléfono del cliente?**
+   **La Cascada (Opción A).** Es la única con un punto de intercepción de texto garantizado antes del audio. La evidencia decisiva: la documentación oficial de OpenAI reconoce que su propio SDK de guardrails en Python **deja pasar el audio bloqueado** antes de poder cortarlo — el bloqueo confiable solo existe en el SDK de Node, y ni así hay una garantía equivalente al "no generar el audio hasta que el texto pase el validador" que sí tiene la cascada de forma nativa.
+
 2. **¿Cuál opción cumple de manera más directa el requisito del banco de entregar *"transcripción y resultado estructurado"*?**
+   **La Cascada.** La transcripción es su output primario, no un canal derivado. Único matiz: **Moshi** es la excepción S2S — genera un monólogo interno de texto sincronizado con el audio — pero no tiene tool-calling productivo para extraer `monto_acordado`/`fecha_acordada`, así que igual perdería en el criterio de "resultado estructurado".
+
 3. **¿La diferencia en latencia de la Opción B justifica la diferencia en costo operativo mensual y la pérdida de control determinista?**
+   **No.** La ganancia de latencia de la Opción B (cientos de ms) no es perceptible frente al umbral que el propio banco aceptó (4–5 s son manejables). A cambio se pierde el punto de intercepción determinista — que es un requisito no negociable en banca regulada — y en el mejor caso (Gemini Live) el costo mensual es comparable al de la cascada, no menor.
+
 4. **¿Cuál es la alternativa más viable para tener un prototipo estable y demostrable en el tiempo que resta del hackathon?**
+   **La Cascada**, con el mismo motor conversacional (LLM + tools + validador) que ya se usa en el canal de texto. Construirla como un caso de voz reutiliza el 90 % del trabajo ya hecho en el agente; una integración S2S sería una segunda pila completa (SDK nuevo, sin validador reusable, sin tools reusables) por una ganancia marginal — riesgo alto para el tiempo que queda.
+
+---
+
+## 5. Veredicto: ranking de modelos Speech-to-Speech (Opción B)
+
+Aunque el veredicto general confirma la Opción A (ver `02-decisiones-y-plan.md`, decisión #1), esta sección responde la pregunta puntual de **cuál sería el mejor modelo S2S si el equipo decidiera usar uno** — útil para defender la decisión en el Q&A ("¿evaluaron alternativas?") y por si el caso de voz del plan (`02-decisiones-y-plan.md`, orden de construcción #7) se replantea.
+
+| # | Modelo | Veredicto | Por qué |
+|---|---|---|---|
+| 🥇 | **Gemini 2.5 Flash Live (native audio)** | **Mejor S2S evaluado** | Menor latencia medida (100–200 ms), tool-calling nativo, costo por minuto más bajo y predecible (~$0.05/min), 30 voces / 24 idiomas. Sigue sin evidencia de voseo salvadoreño ni de intercepción pre-síntesis. |
+| 🥈 | **OpenAI gpt-realtime-2.1 (variante mini)** | Segundo lugar | Ecosistema y SDK más maduros, function calling robusto, costo competitivo en la variante mini ($0.02–0.05/min). Pierde puntos porque su propia documentación admite que el guardrail no siempre intercepta antes de hablar. |
+| 🥉 | **Kyutai Moshi (self-hosted)** | Interesante para el discurso de soberanía, no para el demo | Latencia teórica más baja de las cuatro (~160–200 ms), cero costo marginal, pesos abiertos (on-prem real). **Descalificado para este hackathon**: sin tool-calling productivo, sin voces en español salvadoreño evaluadas, y montar el self-host consume horas que no sobran. Vale como respuesta de una línea a "¿y la soberanía de datos?": *"Moshi demuestra que existe un camino open-source si el banco lo pide en producción."* |
+| ❌ | **Mini-Omni** | Descartado | Modelo de investigación, sin benchmarks de producción, sin soporte de español evaluado, sin comunidad de despliegue comparable a Moshi. No aporta nada que Moshi no cubra ya mejor. |
+
+**Conclusión de esta sección:** si el banco exigiera mañana un S2S nativo, **Gemini 2.5 Flash Live** es la recomendación técnica — no OpenAI, y no por poco: gana en las tres dimensiones que más pesan para telefonía (latencia, costo, tool-calling), y su única desventaja frente a OpenAI (madurez de SDK) es un problema de tiempo de desarrollo, no de arquitectura. Pero ese hallazgo es informativo, no un cambio de plan: **la Opción A sigue siendo la arquitectura del proyecto** porque resuelve un requisito regulatorio (intercepción determinista) que ningún S2S — ni siquiera el mejor — garantiza hoy.
+
+### Matiz importante sobre tool-calling (agregado tras revisión adicional)
+
+La comparación inicial simplificaba de más al decir "tool-calling nativo" para ambos por igual. Investigación adicional en la documentación de LiveKit y de los propios SDKs muestra una diferencia real:
+
+- **OpenAI Realtime**: soporta `tool_choice="none"` para forzar que la siguiente respuesta sea solo voz/texto sin más llamadas a herramientas, soporta *function calling asíncrono*, y permite actualizar el set de herramientas disponibles a mitad de sesión.
+- **Gemini Live**: **no** soporta `tool_choice="none"` de forma confiable, las herramientas deben declararse en el primer `session.update` de la sesión (actualizarlas dinámicamente implica reiniciar la sesión), y en versiones recientes (3.1 Flash Live) el *function calling asíncrono no está soportado* — el modelo se queda en silencio hasta recibir la respuesta de la herramienta.
+
+**Por qué esto no cambia la recomendación para este proyecto:** las tres herramientas que necesita el agente (`consultarCliente`, `consultarOpcionesValidas`, `registrarAcuerdo`) son consultas simples y únicas, no una cadena dinámica de herramientas — y ya está documentado en `02-decisiones-y-plan.md` que una consulta indexada a Postgres toma **< 5 ms**. La limitante de Gemini (bloquear hasta la respuesta de la herramienta) es irrelevante cuando la respuesta tarda menos de lo que dura un parpadeo. La flexibilidad extra de OpenAI (tools dinámicas, tool_choice) resuelve un problema — orquestación de múltiples herramientas cambiantes — que este agente no tiene, porque las reglas de negociación están fijas en código, no elegidas dinámicamente por el modelo.
+
+Fuente: [Gemini realtime tool-control issue — livekit/agents #6002](https://github.com/livekit/agents/issues/6002)
+
+## 6. Corrección: acceso a datos en tiempo real durante la sesión de voz
+
+> **Nota de proceso:** el ranking de la sección 5 pesaba latencia y costo, pero subestimó una capacidad concreta de `gpt-realtime-2.1` que es exactamente el requisito que le importa al equipo: que el agente, mientras habla, pueda consultar datos reales (`consultarCliente`, `consultarOpcionesValidas`, `registrarAcuerdo`). Con esa capacidad puesta en el centro, el veredicto entre los dos modelos S2S cambia.
+
+### Qué tiene gpt-realtime-2.1 que Gemini Live no tiene (verificado en fuentes técnicas, no solo comparadores)
+
+1. **MCP remoto nativo, por URL, sin integración manual.** Se declara así en la config de la sesión:
+   ```python
+   "tools": [{
+       "type": "mcp",
+       "server_url": "https://mcp.bancoagricola-demo.com",
+       "server_label": "agricola-tools",
+       "allowed_tools": ["consultarCliente", "consultarOpcionesValidas", "registrarAcuerdo"],
+       "headers": {"Authorization": "Bearer ..."}
+   }]
+   ```
+   El campo `allowed_tools` es una lista blanca explícita — mismo principio de "menor privilegio" que ya exige `02-decisiones-y-plan.md`. No hay que escribir el wiring de cada tool a mano: se expone un servidor MCP delgado sobre Supabase y el modelo ya sabe llamarlo.
+
+2. **Function calling asíncrono real.** Mientras la tool tarda (una consulta a Supabase, aunque sea de 5ms, más la ida y vuelta de red), el modelo puede decir *"Un momento, dejame confirmar eso"* y seguir sonando natural, en vez de quedarse en silencio. Gemini Live, documentado en la sección 5, **se queda callado hasta que la tool responde** — con una consulta de 5ms es imperceptible, pero con cualquier latencia de red real (100-300ms ida/vuelta a Supabase desde el servidor MCP) empieza a notarse como un corte seco.
+
+3. **Mejora medida de precisión en tool calling: +34%** y **+48% en seguimiento de instrucciones** frente a la versión preview, según OpenAI. Es la única cifra de "calidad de tool calling" con fuente primaria del proveedor en toda esta investigación — Gemini no publica un número equivalente para su versión 2.5 Flash Live.
+
+4. **SIP nativo hacia PSTN vía Twilio.** Si el banco algún día quiere que esto atienda líneas telefónicas reales (no solo el demo), `gpt-realtime-2.1` se conecta directo; es el canal que el banco dijo que usa "mucho" hoy.
+
+### Veredicto revisado
+
+Para el requisito puntual de "que además de la voz, pueda acceder a información en tiempo real", **gpt-realtime-2.1 es hoy la opción S2S técnicamente más sólida — no Gemini 2.5 Flash Live.** La combinación MCP + function calling asíncrono resuelve exactamente el problema (traer datos vivos sin romper la conversación) con menos código propio que cualquier alternativa, incluyendo construirlo a mano sobre la cascada.
+
+**Esto NO resuelve el otro problema, que sigue siendo el motivo original de elegir la cascada:** el requisito de negocio de que una alucinación (un plazo o condonación ilegal) **nunca llegue a sonar** en el oído del cliente. MCP y function calling asíncrono son sobre *tool-calling*, no sobre *content safety* — son ejes distintos. El hallazgo de la sección 5 (el guardrail de OpenAI en el SDK de Python deja pasar el audio bloqueado) sigue vigente y no lo cambia el soporte de MCP.
+
+**Dicho con precisión, no como eslogan:** si la prioridad fuera "acceso a datos en vivo con el mínimo trabajo de ingeniería", la respuesta correcta es `gpt-realtime-2.1`, no Gemini, y no la cascada — es el más maduro de los tres en ese eje específico. Si la prioridad es "garantizar que nunca suene una promesa ilegal", la cascada sigue ganando porque es el único con un punto de bloqueo de texto anterior al audio. Ambos requisitos están en la rúbrica del banco (Dimensión 2 y Dimensión 3 de este documento) — no son el mismo eje y no hay un modelo único que gane los dos a la vez hoy.
+
+### Fuentes de esta sección
+- [Introducing gpt-realtime and Realtime API updates — OpenAI](https://openai.com/index/introducing-gpt-realtime/)
+- [OpenAI adds MCP and SIP support to gpt-realtime — InfoWorld](https://www.infoworld.com/article/4048375/openai-adds-mcp-and-sip-support-to-gpt-realtime-for-smarter-voice-based-agents.html)
+- [gpt-realtime + SIP + MCP production guide — Zenn](https://zenn.dev/kai_kou/articles/191-gpt-realtime-sip-mcp-production-guide?locale=en)
+- [GPT-Realtime-2.1 model page — OpenAI developers docs](https://developers.openai.com/api/docs/models/gpt-realtime-2.1)
+- [OpenAI releases gpt-realtime-2.1 — DataNorth](https://datanorth.ai/news/openai-releases-gpt-realtime-2-1-voice-models)
+
+---
+
+## 7. Por qué el acceso a datos en tiempo real no es un "nice to have": elegibilidad real de los productos de la escalera
+
+> **⚠️ Aclaración de alcance (decisión del equipo):** este proyecto trabaja **únicamente con los grupos "Consumo" y "Vivienda"** de la norma NCB-022. El grupo **"Empresa" queda fuera de alcance** — usa una metodología de clasificación completamente distinta (criterios cualitativos de Anexo 3, no solo días de mora) y es "otro tipo de escalabilidad" que el equipo decidió no abordar en este hackathon. Todos los productos de la escalera de opciones (`01-reglas-del-agente.md` §2) son de Consumo, salvo que se agregue explícitamente un caso de vivienda. La transcripción completa de la norma y las reglas de cada producto de Consumo/Vivienda — la referencia que debe usar el agente para no ofrecer nada que el banco rechazaría — están en [`docs/contexto/04-ncb022-norma-completa.md`](contexto/04-ncb022-norma-completa.md).
+
+La razón concreta por la que el modelo S2S necesita tool-calling confiable no es abstracta — es que **la mayoría de los productos de la escalera de opciones (`01-reglas-del-agente.md` §2) tienen condiciones de elegibilidad que dependen del estado exacto del cliente en ese momento**, no de un catálogo fijo. Investigación de los requisitos públicos y oficiales de cada producto real de Bancoagrícola:
+
+| Producto (escalón) | Qué resuelve | Condición de ESTADO del cliente (bloqueante) | Parámetro numérico del que depende | Fuente |
+|---|---|---|---|---|
+| Recordatorio, mover fecha, abono parcial, débito automático | — | Cuenta activa | Día de pago vs. día de ingreso del cliente | interno (`FINANCIAL_BEHAVIOR`) |
+| **Adelanto de Salario** | Adelanto de nómina, revolvente | **Exclusivo para clientes "planilleros"**: debe recibir su salario o pensión **directamente en Bancoagrícola**. Si no, el producto no existe para ese cliente, punto. | Asalariado: ≥6 meses continuos en la empresa + ingreso líquido ≥$136/mes · Pensionado: ≥2 meses de depósitos + ingreso ≥$74/mes · Edad ≥21 años | [bancoagricola.com/adelanto-de-salario](https://www.bancoagricola.com/adelanto-de-salario) |
+| **Extrafinanciamiento** | Crédito adicional sobre el límite de la tarjeta | ⚠️ **La tarjeta asociada debe estar activa, SIN MORA ni sobregiro.** Si el cliente ya está atrasado en esa tarjeta — el caso exacto que estamos gestionando — **el producto se descalifica automáticamente.** | Edad + plazo del crédito ≤ 55–80 años según categoría laboral · ingreso ≥$350/mes · 3–24 meses de antigüedad laboral | [bancoagricola.com/extrafinanciamiento](https://www.bancoagricola.com/extrafinanciamiento) |
+| **Sobregiro Elite** | Línea rotativa sin garantía | Debe tener una Cuenta Corriente Óptima (Clásica/Dorada/Platino) **activa**; el nivel Preferencial exige además Cuenta Preferencial Elite | Ingreso >$1,000/mes (Elite) o >$2,000/mes (Preferencial) · edad ≥21 años · DUI vigente | [bancoagricola.com/sobregiro-elite](https://www.bancoagricola.com/sobregiro-elite) |
+| **Crédito Personal (Orden de Descuento)** | Cuota fija con descuento de planilla | Debe ser asalariado con descuento por planilla habilitado | Ingreso suficiente vs. cuota (DTI) | [bancoagricola.com/creditos-personas](https://www.bancoagricola.com/creditos-personas) |
+| **Crédito Personal (Cargo a Cuenta)** | Cuota fija con débito a cuenta | Cuenta bancaria activa en Bancoagrícola | — | igual |
+| **Reestructura / readecuación** | Cambio de plazo o tasa | El crédito debe existir y estar clasificado en alguna categoría NCB-022 (A1–E); sí está disponible con mora, a diferencia de Extrafinanciamiento | Categoría de riesgo actual, historial de pagos | NCB-022 (SSF) + política interna — el detalle exacto no es público |
+
+### El hallazgo que cambia la lógica del agente
+
+`01-reglas-del-agente.md` lista **Extrafinanciamiento** como escalón 6, "para cuando el cliente necesita liquidez puntual" — pero el requisito oficial dice explícitamente **"tarjeta activa, sin mora"**. Eso significa que **a un cliente que ya está atrasado en esa tarjeta, ese escalón no se le puede ofrecer nunca** — sería prometer un producto que el sistema del banco rechazaría, exactamente el guardrail #5 que el banco prohibió ("nunca inventes un producto... que no esté en la lista"). Lo mismo aplica a **Adelanto de Salario**: no sirve para un cliente independiente o cuyo salario no entra por Bancoagrícola (ej. Rosa Hernández, que tiene una tienda — probablemente no es "planillera").
+
+**Esto es precisamente por lo que `consultarOpcionesValidas(clienteId)` no puede ser una lista estática en el prompt — tiene que evaluar estas condiciones en tiempo real contra el estado real del cliente**, y es la razón de negocio, no solo técnica, de por qué la Sección 6 de este documento importa: sin `gpt-realtime-2.1` + MCP (o el equivalente en la cascada: una tool call normal de LLM) devolviendo esta elegibilidad *en el momento de la conversación*, el agente ofrecería productos que el banco no puede honrar — y el jurado, que ya avisó que va a intentar romper el agente, es exactamente el tipo de contradicción que un ingeniero de IA bancario detectaría en dos preguntas.
+
+---
+
+## 8. Decisión final — Opción B (Speech-to-Speech)
+
+> **Para la Opción B, si el equipo construye el caso de voz con S2S nativo, el modelo es `gpt-realtime-2.1`.** Queda descartado Gemini 2.5/3.1 Flash Live para este proyecto específico.
+
+Razón resumida (detalle completo en secciones 5–7):
+1. **Latencia y costo** son comparables entre ambos — Gemini es marginalmente mejor, pero la diferencia no es decisiva.
+2. **Acceso a datos en tiempo real** (`consultarCliente`, `consultarOpcionesValidas`, `registrarAcuerdo`) es el requisito que sí decide: `gpt-realtime-2.1` tiene MCP remoto nativo + function calling asíncrono, verificado con fuente primaria de OpenAI. Gemini Live bloquea la conversación mientras espera la respuesta de la tool y no soporta actualizar tools a mitad de sesión.
+3. La Sección 7 confirma que esas tools **no son opcionales ni decorativas** — sin ellas el agente ofrece productos que el banco rechazaría (Extrafinanciamiento a alguien ya en mora, Adelanto de Salario a alguien no planillero).
+4. **Esto no reemplaza la decisión de arquitectura ya tomada en `02-decisiones-y-plan.md` (Opción A, cascada, como arquitectura principal).** Es la respuesta a "si tuviéramos que usar S2S, cuál" — útil para el Q&A y para el caso de voz de demostración, no un cambio del plan de construcción.
+
+### Fuentes de esta sección
+- [OpenAI Realtime API Pricing in 2026 — HackerNoon](https://hackernoon.com/openai-realtime-api-pricing-in-2026-real-world-data-from-4000-measured-sessions)
+- [Gemini 2.5 Flash Live API — Google Cloud docs](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash-live-api)
+- [Moshi: a speech-text foundation model for real-time dialogue — arXiv 2410.00037](https://arxiv.org/html/2410.00037v1)
+- [kyutai-labs/moshi — GitHub](https://github.com/kyutai-labs/moshi)
+- [Realtime API Guardrails — LiteLLM docs](https://docs.litellm.ai/docs/proxy/guardrails/realtime_guardrails)
+- [openai-agents-python issue #1912 — guardrail no bloquea audio en Python SDK](https://github.com/openai/openai-agents-python/issues/1912)
+- [Best STT Providers 2026 — Coval](https://www.coval.ai/blog/best-speech-to-text-providers-in-2026-independent-benchmarks-and-how-to-choose/)

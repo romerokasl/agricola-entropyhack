@@ -65,6 +65,18 @@ Cómo defenderlo cuando pregunten por soberanía de datos (y van a preguntar, es
 
 **Esa última frase hay que poder demostrarla.** Tené la capa de IA en un solo módulo.
 
+#### Adenda: ¿es compatible gpt-realtime-2.1 con la infraestructura real de Bancoagrícola?
+
+Investigación de información pública (no tenemos acceso a la arquitectura interna real del banco — esto es lo máximo que se puede saber desde afuera):
+
+- **El grupo (Bancolombia/Cibest) ya es multi-nube: AWS + Azure.** Bancolombia migró ~90+ aplicaciones y su SAP a AWS como socio estratégico, pero **todo su ecosistema digital interno corre sobre Azure DevOps** (700+ aplicaciones). Esto importa porque `gpt-realtime` **también se distribuye como Azure OpenAI Service** dentro de Microsoft Foundry — o sea, el mismo modelo se puede contratar a través de la nube que el grupo ya usa internamente, no solo directo con OpenAI. Es el argumento de "cambiar el proveedor es cambiar un archivo" hecho más concreto: ni siquiera hay que cambiar de nube.
+- **Ya existe precedente de vendor externo tocando el canal del cliente.** El bot actual de Bancoagrícola (TABOT, en WhatsApp) lo construyó y opera un proveedor externo (S1) desde 2019. Que un tercero provea la capa de IA conversacional no es un concepto nuevo para el banco — ya lo hacen hoy, aunque con un bot de menú rígido.
+- **⚠️ Hallazgo real que hay que decir en voz alta, no esconder:** ni la API directa de OpenAI ni Azure OpenAI ofrecen hoy una región de datos en Latinoamérica para los modelos realtime — los despliegues confirmados de `gpt-realtime`/`gpt-realtime-mini` están en **East US 2 y Sweden Central** únicamente. Es decir: **la voz y el texto de la conversación viajan a EE. UU. o Europa sin importar qué proveedor se elija.** Esto no es un problema para el demo (dato sintético, autorizado explícitamente por el banco), pero es la pregunta de soberanía que hay que responder bien si el jurado la hace.
+- **El Salvador sí regula esto, aunque no encontramos el texto exacto.** La SSF tiene normas técnicas prudenciales (NRP-23 sobre gestión de seguridad de la información, NPB4-50 sobre riesgo operacional) que aplican a cualquier servicio de terceros que procese datos de clientes, y hay una reforma legal explícita sobre protección de datos de usuarios bancarios en la nube. No es público el detalle de qué exige exactamente para transferencia internacional de datos — **es la misma pregunta abierta que ya está en la sección 13 de `00-contexto-global.md` ("¿tecnologías del banco?"): hay que preguntarle a los mentores, no asumir.**
+
+**La respuesta defendible para el pitch, con esto ya investigado:**
+> *"Para el prototipo, los datos son sintéticos y viajan a la nube del proveedor de IA — hoy eso es EE.UU. o Europa, sea OpenAI directo o Azure OpenAI, porque ningún modelo realtime todavía tiene región en Latinoamérica. En producción, el banco ya opera multi-nube con AWS y Azure a nivel de grupo, así que la ruta natural es Azure OpenAI Service dentro de su propio tenant — mismo modelo, mismo contrato de interfaz, con los controles de cumplimiento que ya usan para sus 700 aplicaciones en Azure. La pregunta de qué exige la SSF exactamente para transferencia internacional de datos de clientes es la única que no podemos responder desde afuera — se la trasladamos a los mentores."*
+
 ---
 
 ### 4. Reglas vs. autonomía del agente

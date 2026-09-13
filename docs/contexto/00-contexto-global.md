@@ -359,6 +359,8 @@ decisión de diseño previa.
 | `00-contexto-global.md` | Este documento |
 | `01-reglas-del-agente.md` | System prompt, reglas de negociación, guardrails, batería de ataque |
 | `02-decisiones-y-plan.md` | Las 5 decisiones a defender, los 7 puntos del doc del equipo, orden de construcción, métricas del dashboard |
+| `03-productos-y-ncb022.md` | Análisis y aplicación al proyecto: por qué importa la elegibilidad de cada producto, fórmula de "provisiones evitadas" para el dashboard, distinción NCB-022 vs. ventana de 10 días |
+| `04-ncb022-norma-completa.md` | **La referencia operativa.** Transcripción completa de NCB-022 (Consumo y Vivienda — Empresa excluido por decisión del equipo) + reglas de elegibilidad de cada producto en formato listo para que el agente/validador lo consulte y no ofrezca nada que el banco rechazaría |
 
 ---
 
