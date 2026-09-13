@@ -33,7 +33,14 @@ gastar nada — hay que agotar esas opciones antes de bajar a local.
 |---|---|---|---|
 | Precio /1M tok | Opus 5 $5/$25 · Sonnet 5 $2/$10 | ~$5/$30 | ~$2/$12 |
 | Tool-calling estricto | `strict: true`, el más maduro | Structured Outputs, igual de maduro | Soportado, menos determinista |
+| Acepta `temperature: 0.2` | ❌ No en Opus 5 / Sonnet 5 (HTTP 400) — sí en Haiku 4.5 / 4.6 | ✅ Sí | ✅ Sí |
 | Recomendado | ✅ Opus 5 (robustez ante ataques del jurado) | Alternativa válida | Más barato, menos garantías de schema |
+
+⚠️ **`temperature: 0.2` no es portable.** Los docs del equipo lo fijan como
+configuración y como respuesta del Q&A, pero Opus 5 / Sonnet 5 ya no exponen
+`temperature` y rechazan la petición con 400. No afecta la implementación (el primario
+es Gemini Flash, que sí lo acepta). Detalle completo y la reformulación de la respuesta
+del Q&A en `docs/contexto/03-seleccion-modelo-llm.md`.
 
 ### Cadena de fallback a costo cero
 

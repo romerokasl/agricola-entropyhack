@@ -37,6 +37,14 @@ const config: Config = {
             DEFAULT: "#E2E6EA",
             light: "#EDEDED",
           },
+          // Acentos de Grupo Cibest/Bancolombia, extraídos del sitio real.
+          // Son el "verde acento" que aparece en las láminas del banco.
+          brand: {
+            green: "#00C389",
+            "green-soft": "#E6F9F2",
+            coral: "#FF7F41",
+            sky: "#59CBE8",
+          },
           status: {
             safe: "#28A745",
             "safe-bg": "#EAF7ED",

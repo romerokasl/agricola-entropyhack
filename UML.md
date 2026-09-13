@@ -4,6 +4,24 @@
 > Este documento contiene únicamente el **diseño conceptual, arquitectura de entidades y diagramas UML/ER (pseudo-esqueleto)**. 
 > No contiene código ejecutable SQL ni scripts de base de datos pre-construidos, cumpliendo con la normativa del evento de no generar código previo.
 
+> ⚠️ **Este documento describe el dominio PRE-PIVOTE (el scorer preventivo con
+> pantallas), no el agente conversacional.** Quedó desalineado con el brief oficial del
+> 12 de septiembre en tres puntos concretos:
+>
+> 1. **No tiene tabla de conversación ni de acuerdo**, que es justo la evidencia que el
+>    banco pide textual ("transcripción y resultado").
+> 2. `PREVENTIVE_INTERVENTION.escalon_costo` dice "1 a 6"; la escalera real tiene **8**
+>    escalones.
+> 3. Su enum `tipo_intervencion` no coincide con la escalera: le faltan débito
+>    automático, Adelanto de Salario/Extrafinanciamiento, reestructura y pase a humano,
+>    y agrega "PausaCuota"/"Corresponsal", que no son escalones. **Codificar la escalera
+>    desde acá rompería el guardrail "si no está en la lista, no existe".**
+>
+> **Fuentes autoritativas:** la escalera y los límites de negociación están en
+> `docs/contexto/01-reglas-del-agente.md` §2–§3; el esquema vigente del agente son las
+> 4 tablas de `supabase/migrations/`. Este UML se conserva como referencia de dominio y
+> como insumo de una fase 2.
+
 ---
 
 ## 1. Diagrama Entidad-Relación Conceptual (ERD)

@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "seed:generate": "node scripts/generate-seed.mjs",
+    "demo:reset": "node --env-file=.env.local scripts/reset-demo.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

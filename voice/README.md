@@ -57,9 +57,12 @@ enfoques deben cumplir esto sin excepción**:
 1. **Usar las mismas tools y el mismo contenido de reglas** — ninguno de los dos
    enfoques puede tener su propia copia de la escalera de opciones o de los límites
    de negociación. Un solo lugar, ambos lo consumen.
-2. **Persistir cada turno en `conversaciones`/`turnos` con un campo `voice_mode`**
-   (`'pipeline'` | `'speech_to_speech'`) — así el dashboard filtra y compara sin
-   tocar el schema por enfoque.
+2. **Persistir cada turno en `conversaciones`/`turnos` con `canal` + `modo_voz`** —
+   `canal` es `'texto'` o `'voz'` (NOT NULL) y `modo_voz` es `'pipeline'`, `'s2s'` o
+   NULL cuando el canal es texto. Así el dashboard filtra y compara sin tocar el
+   schema por enfoque, y sin confundir "conversación de texto" con "dato faltante".
+   *(Corrige la versión anterior de este contrato, que definía un solo campo
+   `voice_mode` sin valor válido para el canal de texto — que es el canal principal.)*
 3. **Registrar las mismas métricas por turno**: `latencia_ms`, `tokens_in`,
    `tokens_out` (si aplica), `validador_ok`, `modelo_version`. El pipeline puede
    además desglosar la latencia por etapa (STT/LLM/validador/TTS); S2S reporta el

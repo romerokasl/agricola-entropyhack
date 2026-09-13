@@ -122,5 +122,6 @@ rúbrica. Fuera de alcance también de esta carpeta.
 3. Solo si pasa, se sintetiza audio con TTS. Si falla, se reintenta una vez o cae a
    una respuesta segura predefinida — nunca se sintetiza una respuesta no validada.
 4. Se registra `latencia_ms` desglosada por etapa (STT/LLM/validador/TTS) y
-   `voice_mode: 'pipeline'` en cada turno, para que el dashboard compare esto
-   contra el enfoque speech-to-speech con datos reales, no con argumentos.
+   `canal: 'voz'` + `modo_voz: 'pipeline'` en cada turno, para que el dashboard
+   compare esto contra el enfoque speech-to-speech con datos reales, no con
+   argumentos. Ver el contrato en [`../../README.md`](../../README.md).

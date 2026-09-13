@@ -25,11 +25,38 @@
 | Precio /1M tok (in/out) | Opus 5: $5/$25 · Sonnet 5: $2/$10 | ~$5/$30 | ~$2/$12 |
 | Tool-calling estricto | `strict: true` — garantiza JSON válido contra schema | Structured Outputs con `strict: true`, igual de maduro | Soportado, históricamente menos determinista |
 | Prompt caching | Sí, TTL configurable — clave porque el system prompt + reglas + escalera se reenvía cada turno | Sí | Sí, con más fricción de setup |
+| **Acepta `temperature: 0.2`** | ❌ **No** en Opus 5 / Sonnet 5 / Opus 4.8 / 4.7 / Fable 5 — el parámetro fue eliminado y devuelve **HTTP 400**. Sí en Haiku 4.5 y Opus/Sonnet 4.6 | ✅ Sí | ✅ Sí |
 
 **Recomendación paga: Claude Opus 5.** El diferencial de costo frente a Sonnet 5 es de
 centavos en un demo de ~20 corridas; la variable que importa es robustez de
 instrucción frente a la batería de ataques del jurado, no precio. Sonnet 5 es la
 alternativa razonable si se prioriza recortar costo sobre margen de seguridad.
+
+### ⚠️ Corrección importante: "temperatura 0.2" no es portable entre proveedores
+
+El resto de los docos (`01-reglas-del-agente.md` §6, `02-decisiones-y-plan.md` §4,
+`00-contexto-global.md` §7) fijan **`temperature: 0.2`** como configuración y lo usan
+como respuesta pública en el Q&A sobre control de alucinaciones. Eso **no se puede
+cumplir literalmente con Claude Opus 5 ni Sonnet 5**: esos modelos ya no exponen
+`temperature` y rechazan la petición con 400. Las dos afirmaciones no pueden ser ciertas
+a la vez.
+
+Cómo queda resuelto:
+
+- **No afecta la implementación actual.** El primario decidido es **Gemini Flash**, que
+  sí acepta `temperature: 0.2`. Se implementa tal cual y la recomendación de Alejandro
+  se cumple al pie de la letra.
+- **Si en algún momento se pasa a Claude** y se quiere mantener el 0.2 literal, el
+  modelo tiene que ser **Haiku 4.5** u **Opus/Sonnet 4.6**. Con Opus 5 / Sonnet 5 el
+  control equivalente es `effort` bajo, no `temperature`.
+- **Reformular la respuesta del Q&A** para que no sea frágil al proveedor:
+  > *"Usamos la temperatura mínima donde el proveedor la expone — 0.2 en Gemini. En los
+  > modelos que ya no exponen temperatura, el control equivalente es esfuerzo bajo. En
+  > los dos casos la garantía dura no es el sampling: es el validador determinista que
+  > corre en cada turno."*
+
+Esa última frase además es una respuesta **mejor** que la original, porque el sampling
+nunca fue la garantía real — el validador sí.
 
 ## Cadena de fallback a costo cero
 
