@@ -5,7 +5,7 @@ import type { SenalRiesgo } from "../riesgo/types";
 import { diagnosticar } from "./calendario";
 import { ESCALERA, opcionesValidasPara } from "./ladder";
 import type { DeclaracionTool } from "./llm";
-import type { Cliente, TipoCierre } from "./types";
+import type { Cliente, TipoCierre, Turno } from "./types";
 
 /**
  * Tools tipadas. El modelo razona la conversación; los datos y las reglas vienen de
@@ -18,9 +18,9 @@ import type { Cliente, TipoCierre } from "./types";
  * y el código calcula la fecha). Así no puede inventar ninguno de los dos.
  */
 
-const esquemaConsultarCliente = z.object({}).passthrough();
+const esquemaConsultarCliente = z.any();
 
-const esquemaConsultarOpciones = z.object({}).passthrough();
+const esquemaConsultarOpciones = z.any();
 
 /**
  * Los modelos chicos mandan los números como texto. Medido con llama3.1 en un ensayo:
@@ -58,13 +58,13 @@ export const DECLARACIONES: readonly DeclaracionTool[] = [
   {
     nombre: "consultarCliente",
     descripcion:
-      "Devuelve los datos verificados de la persona con la que estás hablando: cuota, saldo, día de vencimiento, días de atraso y cuándo cobra. Usala cuando necesités confirmar un dato antes de decirlo.",
+      "Opcional: consulta datos del cliente. Nota: los datos ya están en el contexto inicial, no la invoques para responder preguntas conversacionales básicas.",
     parametros: { type: "object", properties: {} },
   },
   {
     nombre: "consultarOpcionesValidas",
     descripcion:
-      "Devuelve la lista de opciones que le podés ofrecer a esta persona, de menor a mayor costo para el banco. Nada fuera de esta lista existe.",
+      "Opcional: consulta las opciones válidas. Nota: las opciones ya están en el contexto inicial, no la invoques para responder preguntas conversacionales básicas.",
     parametros: { type: "object", properties: {} },
   },
   {
@@ -84,7 +84,7 @@ export const DECLARACIONES: readonly DeclaracionTool[] = [
   {
     nombre: "registrarNoAcuerdo",
     descripcion:
-      "Registra que la conversación terminó sin acuerdo, explicando en una frase cuál es el siguiente paso y por qué. Una conversación que no cierra en nada igual tiene que quedar registrada.",
+      "Registra que la conversación terminó definitivamente sin acuerdo únicamente cuando la persona cuelga, se rehúsa rotundamente a hablar o pide terminar la llamada. NUNCA la invoques si la persona sigue en la llamada haciendo preguntas, dudas o proponiendo fechas.",
     parametros: {
       type: "object",
       properties: { motivo: { type: "string", description: "Por qué no hubo acuerdo y cuál es el siguiente paso." } },
@@ -104,6 +104,7 @@ export interface ContextoTools {
    * en el turno de cierre.
    */
   senal?: SenalRiesgo | null;
+  historial?: readonly Turno[];
 }
 
 export interface ResultadoTool {
@@ -152,13 +153,14 @@ const errorTool = (nombre: string, mensaje: string, argumentos?: unknown): Resul
 
 export async function ejecutarTool(
   nombre: string,
-  argumentos: Record<string, unknown>,
+  argumentos: Record<string, unknown> = {},
   ctx: ContextoTools,
 ): Promise<ResultadoTool> {
   const { cliente, conversacionId, hoy, senal } = ctx;
+  const safeArgs = argumentos ?? {};
 
   if (nombre === "consultarCliente") {
-    if (!esquemaConsultarCliente.safeParse(argumentos).success) {
+    if (!esquemaConsultarCliente.safeParse(safeArgs).success) {
       return errorTool(nombre, "Esta herramienta no recibe parámetros.");
     }
     const dx = diagnosticar(cliente, hoy, senal);
@@ -260,10 +262,23 @@ export async function ejecutarTool(
   }
 
   if (nombre === "registrarNoAcuerdo") {
-    const parsed = esquemaRegistrarNoAcuerdo.safeParse(argumentos);
+    const parsed = esquemaRegistrarNoAcuerdo.safeParse(safeArgs);
     if (!parsed.success) {
       return errorTool(nombre, "Hace falta un motivo de al menos 3 caracteres.");
     }
+
+    const ultimoCliente = [...(ctx.historial ?? [])].reverse().find((t) => t.rol === "cliente");
+    const textoCliente = ultimoCliente?.texto.toLowerCase() ?? "";
+    const esPreguntaODuda = /\?|con c|con k|opci[oó]n|cu[aá]nto|c[oó]mo|qui[eé]n|puedo|plazo|a[ñn]o/i.test(textoCliente);
+    const esRechazoExplicito = /\b(?:no voy a pagar|no quiero pagar|no me llamen|dejen de molestar|no me interesa|cuelgo|voy a colgar|no tengo tiempo|adios|chao)\b/i.test(textoCliente);
+
+    if (esPreguntaODuda && !esRechazoExplicito) {
+      return errorTool(
+        nombre,
+        "La persona está haciendo una pregunta o explorando opciones, NO ha rechazado el contacto. Respondé su pregunta directamente con amabilidad y continuá la llamada sin cerrar.",
+      );
+    }
+
     await guardarNoAcuerdo({ conversacionId, motivo: parsed.data.motivo });
     return { nombre, salida: { registrado: true }, cerroConversacion: true, tipoCierre: "no_acuerdo" };
   }

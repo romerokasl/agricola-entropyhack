@@ -363,7 +363,7 @@ function crearOllamaProvider(): LlmProvider {
         model: modelo,
         messages: mensajes,
         stream: false,
-        options: { temperature: TEMPERATURE, num_predict: MAX_OUTPUT_TOKENS },
+        options: { temperature: 0.35, num_predict: 350 },
       };
 
       if (peticion.tools.length > 0) {
@@ -403,10 +403,22 @@ function crearOllamaProvider(): LlmProvider {
       const datos = (await res.json()) as OllamaRespuesta;
       const mensaje = datos.message;
 
-      const llamadasTool: LlamadaTool[] = (mensaje?.tool_calls ?? []).map((tc) => ({
-        nombre: tc.function.name,
-        argumentos: tc.function.arguments ?? {},
-      }));
+      const llamadasTool: LlamadaTool[] = (mensaje?.tool_calls ?? []).map((tc) => {
+        let args: Record<string, unknown> = {};
+        if (typeof tc.function.arguments === "string") {
+          try {
+            args = JSON.parse(tc.function.arguments);
+          } catch {
+            args = {};
+          }
+        } else if (tc.function.arguments && typeof tc.function.arguments === "object") {
+          args = tc.function.arguments as Record<string, unknown>;
+        }
+        return {
+          nombre: tc.function.name,
+          argumentos: args,
+        };
+      });
 
       return {
         texto: (mensaje?.content ?? "").trim(),

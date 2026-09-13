@@ -278,6 +278,12 @@ export function limpiarPreambuloIa(texto: string): string {
     }
   }
 
+  // Si el modelo escribió un razonamiento o análisis antes de la respuesta ("... la respuesta sería: '...'")
+  const matchRespuesta = t.match(/(?:por lo que|as[íi] que|de ah[íi] que)?\s*(?:la respuesta(?: al cliente| al usuario)?|mi respuesta)(?: es| ser[íi]a)?:\s*["“]?([^"”]+)["”]?/is);
+  if (matchRespuesta && matchRespuesta[1]?.trim()) {
+    return matchRespuesta[1].trim();
+  }
+
   t = t.replace(/^(?:la respuesta (?:al usuario )?(?:es|ser[íi]a)|respuesta|agente)\s*:\s*/i, "");
   t = t.replace(/^["“](.*?)["”]?$/s, "$1").trim();
   return t;

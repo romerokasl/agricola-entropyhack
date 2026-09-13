@@ -1,6 +1,6 @@
 import { agregarTurno, guardarNoAcuerdo } from "../db/conversaciones";
 import type { SenalRiesgo } from "../riesgo/types";
-import { obtenerLlmProvider, type MensajeLlm } from "./llm";
+import { obtenerLlmProvider, type DeclaracionTool, type MensajeLlm } from "./llm";
 import {
   construirContexto,
   DISPARADOR_APERTURA,
@@ -56,10 +56,22 @@ export interface ResultadoTurno {
 }
 
 function aMensajes(historial: readonly Turno[]): MensajeLlm[] {
-  return historial
+  const mensajes: MensajeLlm[] = historial
     .filter((t) => t.rol !== "sistema")
     .slice(-MAX_TURNOS_HISTORIAL)
     .map((t) => ({ rol: t.rol === "cliente" ? "cliente" : "agente", texto: t.texto }));
+
+  // Si el primer mensaje del historial es del agente (llamada saliente),
+  // los modelos de chat (Llama-3, Qwen, Gemini) requieren estrictamente que
+  // el diálogo inicie con un turno de usuario para mantener la coherencia conversacional.
+  if (mensajes.length > 0 && mensajes[0].rol === "agente") {
+    mensajes.unshift({
+      rol: "cliente" as const,
+      texto: "[El cliente descuelga el teléfono y atiende la llamada]",
+    });
+  }
+
+  return mensajes;
 }
 
 export async function ejecutarTurno(params: {
@@ -179,6 +191,27 @@ export async function ejecutarTurno(params: {
     return r;
   };
 
+  // Para Ollama (modelo local 8B), evitar que confunda tools con obligación de llamarlas:
+  // solo se habilitan las herramientas cuando hay indicio claro de aceptación o rechazo.
+  const ultimoClienteTurno = [...historial].reverse().find((t) => t.rol === "cliente");
+  const textoClienteTurno = (ultimoClienteTurno?.texto ?? "").toLowerCase();
+  const posibleAcuerdo = /\b(?:s[íi]|de acuerdo|me parece|perfecto|trato|acepto|est[áa] bien|anot[aá]|dejalo|quedemos|listo|dale|va|confirm|fijemos|dej[eé]mosla|esa fecha)\b/i.test(textoClienteTurno);
+  const posibleRechazo = /\b(?:no voy a pagar|no quiero pagar|no me llamen|dejen de molestar|no me interesa|cuelgo|voy a colgar|no tengo tiempo|adios|chao)\b/i.test(textoClienteTurno);
+
+  let toolsDisponibles: readonly DeclaracionTool[] = DECLARACIONES;
+  if (proveedor.nombre === "ollama") {
+    const filtradas: DeclaracionTool[] = [];
+    if (posibleAcuerdo) {
+      const tAcuerdo = DECLARACIONES.find((t) => t.nombre === "registrarAcuerdo");
+      if (tAcuerdo) filtradas.push(tAcuerdo);
+    }
+    if (posibleRechazo) {
+      const tNoAcuerdo = DECLARACIONES.find((t) => t.nombre === "registrarNoAcuerdo");
+      if (tNoAcuerdo) filtradas.push(tNoAcuerdo);
+    }
+    toolsDisponibles = filtradas;
+  }
+
   // --- Ciclo de herramientas -------------------------------------------------
   for (let iteracion = 0; iteracion < MAX_ITERACIONES_TOOLS; iteracion += 1) {
     const respuesta = await cronometrar(
@@ -187,7 +220,7 @@ export async function ejecutarTurno(params: {
           systemPrompt: SYSTEM_PROMPT,
           contexto,
           historial: mensajes,
-          tools: DECLARACIONES,
+          tools: toolsDisponibles,
         }),
       (ms) => {
         latenciaLlmMs += ms;
@@ -209,6 +242,7 @@ export async function ejecutarTurno(params: {
         conversacionId,
         hoy,
         senal,
+        historial,
       });
       if (resultado.cerroConversacion) {
         cerroConversacion = true;
@@ -250,7 +284,7 @@ export async function ejecutarTurno(params: {
           systemPrompt: SYSTEM_PROMPT,
           contexto,
           historial: mensajes,
-          tools: DECLARACIONES,
+          tools: toolsDisponibles,
           notaCorrectiva,
         }),
       (ms) => {
