@@ -23,6 +23,7 @@ export async function GET(
     if (detalle === null) return error("NOT_FOUND", "Esa conversación no existe.", 404);
     return NextResponse.json({ success: true, data: detalle });
   } catch (e: unknown) {
-    return error("SERVER_ERROR", e instanceof Error ? e.message : "Error interno", 500);
+    console.error("[api/dashboard/conversaciones]", e);
+    return error("SERVER_ERROR", "Error interno", 500);
   }
 }

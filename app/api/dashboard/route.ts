@@ -12,7 +12,8 @@ export async function GET() {
   try {
     return NextResponse.json({ success: true, data: await obtenerResumenDashboard() });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "Error interno";
+    console.error("[api/dashboard]", e);
+    const message = "Error interno";
     return NextResponse.json({ success: false, error: { code: "SERVER_ERROR", message } }, { status: 500 });
   }
 }

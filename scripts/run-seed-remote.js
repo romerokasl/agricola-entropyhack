@@ -3,8 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const SUPABASE_URL = 'https://zepewgqjqbcnfsmbqsad.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InplcGV3Z3FqcWJjbmZzbWJxc2FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MDg3NjYsImV4cCI6MjEwNDI4NDc2Nn0.AhFEDseo5jLU7MUeQ-wcmX-JvbBDKYw2wHtWWidMc74';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  console.error('Corré: node --env-file=.env.local scripts/run-seed-remote.js');
+  process.exit(1);
+}
 
 // Check if we have a real service_role key (different from anon)
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -110,12 +116,12 @@ async function main() {
     console.log('\n⚠️  No se detectó una service_role_key diferente de la anon key.');
     console.log('RLS está activado y bloqueará las inserciones con anon key.');
     console.log('\n📋 SOLUCIÓN: Necesitas la clave service_role real de tu proyecto Supabase.');
-    console.log('   1. Ve a https://supabase.com/dashboard/project/zepewgqjqbcnfsmbqsad/settings/api');
+    console.log('   1. Ve a https://supabase.com/dashboard/project/TU-PROYECTO/settings/api');
     console.log('   2. Copia la "service_role" key (NO la anon key)');
     console.log('   3. Pégala en .env.local como SUPABASE_SERVICE_ROLE_KEY');
     console.log('   4. Vuelve a ejecutar este script');
     console.log('\n📋 ALTERNATIVA RÁPIDA: Ejecuta el SQL directamente en el SQL Editor:');
-    console.log('   1. Ve a https://supabase.com/dashboard/project/zepewgqjqbcnfsmbqsad/sql/new');
+    console.log('   1. Ve a https://supabase.com/dashboard/project/TU-PROYECTO/sql/new');
     console.log('   2. Pega el contenido de supabase/seed.sql');
     console.log('   3. Click "Run"');
     console.log('\n📋 ALTERNATIVA MÁS RÁPIDA: Agrega una RLS policy temporal.');
