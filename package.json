@@ -9,9 +9,11 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "seed:generate": "node scripts/generate-seed.mjs",
+    "seed:apply": "node --env-file=.env.local scripts/seed-apply.mjs",
     "demo:reset": "node --env-file=.env.local scripts/reset-demo.mjs",
     "verify:reglas": "tsx scripts/verificar-reglas.ts",
-    "ataque": "tsx scripts/bateria-ataque.ts"
+    "ataque": "tsx scripts/bateria-ataque.ts",
+    "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",
@@ -30,6 +32,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.24",
+    "pg": "^8.23.0",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.23.13",

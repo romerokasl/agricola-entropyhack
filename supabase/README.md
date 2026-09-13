@@ -73,10 +73,42 @@ Esa es la diferencia entre un modelo y un megáfono — y es auditable, no hardc
 
 ## Aplicar el esquema y los datos
 
+Hay tres rutas. **La del SQL Editor es la que siempre funciona**; las otras dos dependen
+de tener herramientas o la connection string correcta.
+
+### A. SQL Editor del dashboard (la más confiable)
+
+1. Abrir el SQL Editor del proyecto
+2. Pegar el contenido de `migrations/20260912150000_create_agent_schema.sql` → Run
+3. Pegar el contenido de `seed.sql` → Run
+
+Sigue respetando la regla de "nunca crear tablas desde el dashboard": el archivo
+versionado es la fuente de verdad, el editor solo lo ejecuta.
+
+### B. Desde Node, sin psql (Windows-friendly)
+
+```bash
+npm run db:migrate   # aplica supabase/migrations/ en orden
+npm run seed:apply   # siembra los 308 clientes
+```
+
+`seed:apply` usa la API REST y funciona siempre. **`db:migrate` necesita un
+`DATABASE_URL` que resuelva**, y ahí está el detalle importante:
+
+> ⚠️ La connection string **directa** (`db.<ref>.supabase.co`) hoy es solo IPv6 y falla
+> con `ENOTFOUND` en redes IPv4. Hay que usar la del **Session pooler**
+> (`...pooler.supabase.com:5432`, usuario `postgres.<ref>`), que sí resuelve por IPv4.
+> Está en Project Settings → Database → Connection string → *Session pooler*.
+
+### C. psql
+
 ```bash
 psql "$DATABASE_URL" -f supabase/migrations/20260912150000_create_agent_schema.sql
 psql "$DATABASE_URL" -f supabase/seed.sql
 ```
 
-`seed.sql` arranca con un `truncate ... cascade`, así que es idempotente: se puede
-correr las veces que haga falta durante el demo.
+Aplica la misma advertencia sobre el pooler. Nadie en el equipo tiene `psql` instalado,
+así que en la práctica se usa A o B.
+
+`seed.sql` arranca con un `truncate ... cascade` y `seed:apply` limpia antes de
+insertar: los dos son idempotentes, se pueden correr las veces que haga falta.
