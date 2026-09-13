@@ -1,3 +1,4 @@
+import type { SenalRiesgo } from "../riesgo/types";
 import { opcionesValidasPara } from "./ladder";
 import type { Cliente, Turno } from "./types";
 
@@ -63,14 +64,20 @@ function contarFrases(texto: string): number {
 }
 
 /** Montos que el agente puede mencionar sin estar inventando. */
-function montosPermitidos(cliente: Cliente, historial: readonly Turno[]): Set<string> {
+function montosPermitidos(
+  cliente: Cliente,
+  historial: readonly Turno[],
+  senal?: SenalRiesgo | null,
+): Set<string> {
   const permitidos = new Set<string>();
   const agregar = (n: number) => permitidos.add(n.toFixed(2));
 
   agregar(cliente.cuota);
   agregar(cliente.saldo);
   agregar(cliente.cuota / 2);
-  for (const opcion of opcionesValidasPara(cliente)) {
+  // Con la misma señal que armó el contexto: si el riesgo desbloqueó una opción, sus
+  // montos son legítimos. Validar contra una lista más corta rechazaría un cierre bueno.
+  for (const opcion of opcionesValidasPara(cliente, senal)) {
     for (const m of opcion.detalle.matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)) {
       agregar(Number(m[1].replace(/,/g, "")));
     }
@@ -91,6 +98,8 @@ export interface ContextoValidacion {
   historial: readonly Turno[];
   /** true cuando esta es la primera respuesta del agente en la conversación. */
   esPrimerMensajeDelAgente: boolean;
+  /** La misma señal con la que se construyó el contexto del turno. */
+  senal?: SenalRiesgo | null;
 }
 
 export function validar(respuesta: string, ctx: ContextoValidacion): ResultadoValidacion {
@@ -147,7 +156,7 @@ export function validar(respuesta: string, ctx: ContextoValidacion): ResultadoVa
     }
   }
 
-  const permitidos = montosPermitidos(ctx.cliente, ctx.historial);
+  const permitidos = montosPermitidos(ctx.cliente, ctx.historial, ctx.senal);
   for (const m of texto.matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)) {
     const valor = Number(m[1].replace(/,/g, ""));
     if (!Number.isFinite(valor)) continue;
