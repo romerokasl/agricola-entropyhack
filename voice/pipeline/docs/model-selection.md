@@ -50,6 +50,19 @@ del Q&A en `docs/contexto/03-seleccion-modelo-llm.md`.
 | **2** | **Groq (Llama 3.3 70B u otro open-weight)** | $0 permanente | Respaldo si Gemini se queda sin cupo en pleno demo. 30 req/min, ~14,400 req/día, muy rápido (~320 tok/s). Tool-calling algo menos confiable que Gemini. |
 | **3 — última opción** | **Ollama local (Llama/Mistral en la laptop)** | $0, sin límite | Solo como fallback sin red. Calidad de español y de tool-calling notablemente menor — no usar como opción principal del demo, solo para probar el escenario "sin internet". |
 
+### 📌 Cambio del 13 de septiembre: Ollama es el default **de desarrollo**, no del demo
+
+`lib/agent/llm.ts` ya implementa Ollama y `LLM_PROVIDER` por defecto vale `ollama`, para
+poder iterar sin la cuota de 20 peticiones/día/modelo de Gemini. El demo sigue siendo
+Gemini Flash (`LLM_PROVIDER=gemini`).
+
+**Para esta carpeta la consecuencia es una regla en dos niveles:** probar el cableado y la
+latencia del pipeline con Ollama está bien (`qwen2.5:3b`, 756 ms por turno medidos);
+**ensayar calidad conversacional o grabar tomas, con Gemini**. Con `llama3.1:8b` el mismo
+turno tardaba 94 s porque no cabía en los 4 GB de VRAM — el modelo tiene que caber
+completo en la GPU (`ollama ps` debe decir `100% GPU`). Ver
+[`plan-implementacion.md`](plan-implementacion.md) §2.
+
 ⚠️ **Correr la batería de 20 ataques (`01-reglas-del-agente.md` §4) sobre el modelo
 gratuito que efectivamente se use.** Un modelo más chico tiene más probabilidad de
 filtrar jerga prohibida o de mal formar un argumento de tool que Opus 5.
