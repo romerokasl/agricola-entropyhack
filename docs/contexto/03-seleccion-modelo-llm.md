@@ -73,6 +73,37 @@ usado en `voice/pipeline/docs/model-selection.md`):
 use.** Un modelo más chico tiene más probabilidad de filtrar jerga prohibida o de mal
 formar un argumento de tool que un modelo de frontera pago.
 
+## 🚨 La cuota del tier gratuito es el mayor riesgo operativo del demo
+
+**Medido contra la API el 12 de septiembre**, no estimado:
+
+```
+GenerateRequestsPerDayPerProjectPerModel-FreeTier = 20
+```
+
+**Veinte peticiones por día y por modelo.** Una conversación completa de Karla consume
+entre 4 y 6 (apertura + turnos + ida y vuelta de herramientas + reintentos del
+validador). Es decir: **~3 conversaciones diarias por modelo**, cuando el propio plan
+del equipo dice que el demo "se va a correr veinte veces".
+
+Cómo está mitigado hoy, en `lib/agent/llm.ts`:
+
+- **La cuota es por modelo, así que el proveedor rota entre varios** (`gemini-3.6-flash`
+  → `3.7` → `3.8` → `3.5` → `3.1-flash-lite`). Cuando uno devuelve 429, pasa al
+  siguiente automáticamente. Eso multiplica la capacidad por cinco sin pagar nada.
+- `GEMINI_MODEL` fija uno solo y desactiva la rotación, para pruebas controladas.
+- Cada turno registra en `turnos.modelo_version` **cuál modelo lo atendió de verdad**,
+  no cuál se pretendía usar.
+
+Qué queda pendiente y hay que decidir antes del pitch:
+
+1. **Ensayar con cuidado.** Cada ensayo completo quema cuota real. Conviene ensayar el
+   guion sin disparar el agente y reservar las corridas completas.
+2. **Tener una segunda API key** (otra cuenta de AI Studio) como respaldo: duplica la
+   cuota de inmediato y es gratis.
+3. **Implementar el fallback a Groq**, que ya estaba decidido. Deja de ser opcional:
+   es el seguro contra quedarse sin cuota en vivo.
+
 ## Resumen
 
 | | Primaria | Respaldo | Última opción |

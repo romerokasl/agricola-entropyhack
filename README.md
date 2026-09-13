@@ -68,11 +68,13 @@ La aplicación estará disponible en [http://localhost:3000](http://localhost:30
 ### 2.1 Aplicar el esquema y los datos
 
 ```bash
-psql "$DATABASE_URL" -f supabase/migrations/20260912150000_create_agent_schema.sql
-psql "$DATABASE_URL" -f supabase/seed.sql
+npm run db:migrate   # crea las 4 tablas
+npm run seed:apply   # siembra 8 personajes + 300 clientes sintéticos
 ```
 
-El `seed.sql` está generado por `scripts/generate-seed.mjs` (determinista) e incluye los 8 personajes del demo más 300 clientes sintéticos. Detalles en [`supabase/README.md`](supabase/README.md).
+> Si `db:migrate` falla con `ENOTFOUND`, tu `DATABASE_URL` es la conexión **directa**, que hoy es solo IPv6. Usá la del **Session pooler** (Project Settings → Database → Connection string → Session pooler). Alternativa que siempre funciona: pegar los `.sql` en el SQL Editor del dashboard.
+
+El dataset está generado por `scripts/dataset.mjs` y es determinista. Las tres formas de aplicarlo, en [`supabase/README.md`](supabase/README.md).
 
 ### 2.2 Probar la conversación
 

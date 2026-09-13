@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { diagnosticar } from "@/lib/agent/calendario";
 import { ejecutarTurno } from "@/lib/agent/orchestrator";
+import type { Turno } from "@/lib/agent/types";
 import { obtenerClientePorId, obtenerClientePorSlug } from "@/lib/db/clientes";
 import {
   agregarTurno,
@@ -115,8 +116,11 @@ export async function POST(req: NextRequest) {
     const cliente = await obtenerClientePorId(conversacion.clienteId);
     if (!cliente) return error("NOT_FOUND", "El cliente de esa conversación no existe.", 404);
 
-    await agregarTurno({ conversacionId, rol: "cliente", texto });
-    const historial = await obtenerTurnos(conversacionId);
+    // Se lee el historial una sola vez y se arma en memoria, en vez de releerlo
+    // después de insertar: son dos viajes menos a la base por turno.
+    const previos = await obtenerTurnos(conversacionId);
+    await agregarTurno({ conversacionId, indice: previos.length, rol: "cliente", texto });
+    const historial: Turno[] = [...previos, { rol: "cliente", texto }];
 
     const turno = await ejecutarTurno({
       cliente,
