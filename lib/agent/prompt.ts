@@ -1,8 +1,7 @@
-import type { BandaRiesgo } from "./types";
 import type { SenalRiesgo } from "../riesgo/types";
 import { diagnosticar } from "./calendario";
 import { opcionesValidasPara } from "./ladder";
-import type { Apertura, Canal, Cliente } from "./types";
+import type { Apertura, BandaRiesgo, Canal, Cliente } from "./types";
 
 /**
  * El system prompt del agente. Es el archivo de mayor apalancamiento del proyecto:
@@ -137,11 +136,7 @@ Como le hablarías a alguien que apreciás y que anda apretado este mes. Directo
 sin sermón, sin condescendencia, sin signos de exclamación de más. La persona del otro
 lado no hizo nada malo.`;
 
-/**
- * El contexto del turno. Va como bloque de datos, no como prompt distinto: la etapa y
- * la apertura son variables, para no multiplicar prompts por caso
- * (docs/contexto/02-decisiones-y-plan.md §3).
- */
+/** La banda, traducida a una palabra que el prompt sí puede contener. */
 const PRIORIDAD_POR_BANDA: Record<BandaRiesgo, string> = {
   LOW: "baja",
   MODERATE: "media",
@@ -194,6 +189,11 @@ const GUIA_DE_VOZ = [
   "",
 ];
 
+/**
+ * El contexto del turno. Va como bloque de datos, no como prompt distinto: la etapa y
+ * la apertura son variables, para no multiplicar prompts por caso
+ * (docs/contexto/02-decisiones-y-plan.md §3).
+ */
 export function construirContexto(
   cliente: Cliente,
   apertura: Apertura,
