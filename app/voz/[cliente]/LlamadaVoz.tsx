@@ -965,7 +965,7 @@ export default function LlamadaVoz({ slug, apertura }: { slug: string; apertura:
                 </div>
                 <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300 backdrop-blur-sm shadow-sm">
                   <Sparkles className="h-3 w-3 text-emerald-400" />
-                  <span>Voz: Lorena (Neuronal 🇸🇻)</span>
+                  <span>Voz: Rodrigo (Neuronal 🇸🇻)</span>
                 </div>
               </div>
             </div>
